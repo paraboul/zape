@@ -1,0 +1,11 @@
+.{
+    .name = "c-ares",
+    .version = "1.17.2",
+    .paths = .{""},
+    .dependencies = .{
+        .@"c-ares" = .{
+            .url = "https://github.com/c-ares/c-ares/releases/download/cares-1_17_2/c-ares-1.17.2.tar.gz",
+            .hash = "12206a6472bba0fd033c160408f6d252d178428b7252b3523417908e5bda8c82db7c"
+        },
+    },
+}

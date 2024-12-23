@@ -1,0 +1,10 @@
+.{
+    .name = "netserver",
+    .version = "0.0.1",
+    .dependencies = .{
+        .libapenetwork = .{
+            .path = "./pkg/libapenetwork",
+        },
+    },
+    .paths = .{""},
+}
