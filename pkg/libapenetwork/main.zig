@@ -1,9 +1,19 @@
 pub const c = @import("c.zig").c;
 const std = @import("std");
 
+pub const ShutdownAction = enum {
+    queue,
+    now,
+};
+
+pub const DataLifetime = enum {
+    static,
+    own,
+    copy
+};
+
 pub fn callAsync(comptime callback: anytype, args: anytype) void {
     const gape = c.APE_get();
-
 
     const wrapper = struct {
         fn wrappedCallback(arg: ?*anyopaque) callconv(.C) c_int {
@@ -18,8 +28,19 @@ pub const Client = struct {
     const Self = @This();
     socket : [*c]c.ape_socket,
 
-    pub fn write(self: *const Self, data: []const u8) void {
-        _ = c.APE_socket_write(self.socket, @constCast(data.ptr), data.len, c.APE_DATA_OWN);
+    pub fn write(self: *const Self, data: []const u8, lifetime: DataLifetime) void {
+        _ = c.APE_socket_write(self.socket, @constCast(data.ptr), data.len, switch (lifetime) {
+           .static => c.APE_DATA_STATIC,
+           .own => c.APE_DATA_OWN,
+           .copy => c.APE_DATA_COPY
+        });
+    }
+
+    pub fn close(self: *const Self, action: ShutdownAction) void {
+        switch (action) {
+            .now => c.APE_socket_shutdown_now(self.socket),
+            .queue => c.APE_socket_shutdown(self.socket)
+        }
     }
 };
 
