@@ -12,8 +12,10 @@ fn testcallbool(val: * const bool) u32 {
     return 10;
 }
 
-pub fn connected(_: *apenetwork.Server) void {
+pub fn connected(_: *apenetwork.Server, client: *const apenetwork.Client) void {
     std.debug.print("New client connected", .{});
+
+    client.write("Hello !");
 }
 
 pub fn main() !void {

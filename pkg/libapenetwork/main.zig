@@ -14,6 +14,15 @@ pub fn callAsync(comptime callback: anytype, args: anytype) void {
     _ = c.APE_async(gape, wrapper.wrappedCallback, @constCast(args));
 }
 
+pub const Client = struct {
+    const Self = @This();
+    socket : [*c]c.ape_socket,
+
+    pub fn write(self: *const Self, data: []const u8) void {
+        _ = c.APE_socket_write(self.socket, @constCast(data.ptr), data.len, c.APE_DATA_OWN);
+    }
+};
+
 pub const Server = struct {
     const Self = @This();
 
@@ -34,13 +43,19 @@ pub const Server = struct {
 
         self.socket.*.callbacks.arg = self;
         self.socket.*.callbacks.on_connect = struct {
-            fn callback(_: [*c]c.ape_socket, _: [*c]c.ape_socket, _: [*c]c.ape_global, srv: ?*anyopaque) callconv(.C) void {
+            fn callback(_: [*c]c.ape_socket, _client: [*c]c.ape_socket, _: [*c]c.ape_global, srv: ?*anyopaque) callconv(.C) void {
 
                 const ctx : *Self = @ptrCast(@alignCast(srv));
 
-                @call(.always_inline, connected, .{ ctx });
+                const client = Client{.socket = _client};
+
+                @call(.always_inline, connected, .{ ctx, &client });
             }
         }.callback;
+    }
+
+    pub fn write(_: *Self, client: anytype, data: []u8) void {
+        c.APE_socket_write(client, data.ptr, data.len, c.APE_DATA_OWN);
     }
 };
 
