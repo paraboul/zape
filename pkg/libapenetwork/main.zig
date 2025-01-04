@@ -44,6 +44,12 @@ pub const Client = struct {
     }
 };
 
+
+const ServerCallbacks = struct {
+    onConnect: ?fn (*Server, *const Client) void = null,
+    onData: ?fn (*Server, *const Client, []const u8) void = null
+};
+
 pub const Server = struct {
     const Self = @This();
 
@@ -56,7 +62,7 @@ pub const Server = struct {
         };
     }
 
-    pub fn start(self: *Self, port: u16, comptime connected: anytype, comptime ondata: anytype) !void {
+    pub fn start(self: *Self, port: u16, comptime callbacks: ServerCallbacks) !void {
 
         if (c.APE_socket_listen(self.socket, port, "0.0.0.0", 0, 0) == -1) {
             return error.APE_socket_listen_error;
@@ -69,7 +75,9 @@ pub const Server = struct {
                 const ctx : *Self = @ptrCast(@alignCast(srv));
                 const client = Client{.socket = _client};
 
-                @call(.always_inline, connected, .{ ctx, &client });
+                if (callbacks.onConnect) |onconnect| {
+                    @call(.always_inline, onconnect, .{ ctx, &client });
+                }
             }
         }.callback;
 
@@ -79,14 +87,13 @@ pub const Server = struct {
                 const ctx : *Self = @ptrCast(@alignCast(srv));
                 const client = Client{.socket = _client};
 
-                @call(.always_inline, ondata, .{ ctx, &client, data[0..len] });
+                if (callbacks.onData) |ondata| {
+                    @call(.always_inline, ondata, .{ ctx, &client, data[0..len] });
+                }
             }
         }.callback;
     }
 
-    pub fn write(_: *Self, client: anytype, data: []u8) void {
-        c.APE_socket_write(client, data.ptr, data.len, c.APE_DATA_COPY);
-    }
 };
 
 
