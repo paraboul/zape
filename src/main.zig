@@ -28,9 +28,6 @@ pub fn ondata(_: *apenetwork.Server, client: *const apenetwork.Client, data: []c
 }
 
 pub fn main() !void {
-    // Prints to stderr (it's a shortcut based on `std.io.getStdErr()`)
-    std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
-
     apenetwork.init();
 
     const testref : bool = true;
