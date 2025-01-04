@@ -35,7 +35,7 @@ pub const Server = struct {
         };
     }
 
-    pub fn start(self: *Self, port: u16, comptime connected: anytype) !void {
+    pub fn start(self: *Self, port: u16, comptime connected: anytype, comptime ondata: anytype) !void {
 
         if (c.APE_socket_listen(self.socket, port, "0.0.0.0", 0, 0) == -1) {
             return error.APE_socket_listen_error;
@@ -46,16 +46,25 @@ pub const Server = struct {
             fn callback(_: [*c]c.ape_socket, _client: [*c]c.ape_socket, _: [*c]c.ape_global, srv: ?*anyopaque) callconv(.C) void {
 
                 const ctx : *Self = @ptrCast(@alignCast(srv));
-
                 const client = Client{.socket = _client};
 
                 @call(.always_inline, connected, .{ ctx, &client });
             }
         }.callback;
+
+        self.socket.*.callbacks.on_read = struct {
+            fn callback(_client: [*c]c.ape_socket, data: [*c]const u8, len: usize, _: [*c]c.ape_global, srv: ?*anyopaque) callconv(.C) void {
+
+                const ctx : *Self = @ptrCast(@alignCast(srv));
+                const client = Client{.socket = _client};
+
+                @call(.always_inline, ondata, .{ ctx, &client, data[0..len] });
+            }
+        }.callback;
     }
 
     pub fn write(_: *Self, client: anytype, data: []u8) void {
-        c.APE_socket_write(client, data.ptr, data.len, c.APE_DATA_OWN);
+        c.APE_socket_write(client, data.ptr, data.len, c.APE_DATA_COPY);
     }
 };
 

@@ -18,6 +18,10 @@ pub fn connected(_: *apenetwork.Server, client: *const apenetwork.Client) void {
     client.write("Hello !");
 }
 
+pub fn ondata(_: *apenetwork.Server, _: *const apenetwork.Client, data: []const u8) void {
+    std.debug.print("New data received of len {s}\n", .{data});
+}
+
 pub fn main() !void {
     // Prints to stderr (it's a shortcut based on `std.io.getStdErr()`)
     std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
@@ -31,7 +35,7 @@ pub fn main() !void {
     apenetwork.callAsync(testcallbool, &testref);
 
     var server = try apenetwork.Server.init();
-    try server.start(800, connected);
+    try server.start(800, connected, ondata);
 
     apenetwork.startLoop();
 }
