@@ -30,14 +30,22 @@ pub fn ondata(_: *apenetwork.Server, client: *const apenetwork.Client, data: []c
 pub fn main() !void {
     apenetwork.init();
 
-    const testref : bool = true;
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 
-    apenetwork.callAsync(testcallbool, &testref);
+    // const testref : bool = true;
 
-    var server = try apenetwork.Server.init();
-    try server.start(80, .{
-        .onConnect = connected,
-    });
+    // apenetwork.callAsync(testcallbool, &testref);
+
+    // var server = try apenetwork.Server.init();
+    // try server.start(80, .{
+    //     .onConnect = connected,
+    // });
+
+    var server = try http.HttpServer.init(gpa.allocator());
+
+    try server.start(80);
+
+    std.debug.print("Server http started at {*}\n", .{&server});
 
     apenetwork.startLoop();
 }

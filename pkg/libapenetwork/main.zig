@@ -47,6 +47,7 @@ pub const Client = struct {
 
 const ServerCallbacks = struct {
     onConnect: ?fn (*Server, *const Client) void = null,
+    onDisconnect: ?fn (*Server, *const Client) void = null,
     onData: ?fn (*Server, *const Client, []const u8) void = null
 };
 
@@ -54,7 +55,6 @@ pub const Server = struct {
     const Self = @This();
 
     socket : [*c]c.ape_socket = null,
-
 
     pub fn init() !Server {
         return .{
@@ -69,6 +69,7 @@ pub const Server = struct {
         }
 
         self.socket.*.callbacks.arg = self;
+
         self.socket.*.callbacks.on_connect = struct {
             fn callback(_: [*c]c.ape_socket, _client: [*c]c.ape_socket, _: [*c]c.ape_global, srv: ?*anyopaque) callconv(.C) void {
 
@@ -77,6 +78,18 @@ pub const Server = struct {
 
                 if (callbacks.onConnect) |onconnect| {
                     @call(.always_inline, onconnect, .{ ctx, &client });
+                }
+            }
+        }.callback;
+
+        self.socket.*.callbacks.on_disconnect = struct {
+            fn callback(_client: [*c]c.ape_socket, _: [*c]c.ape_global, srv: ?*anyopaque) callconv(.C) void {
+
+                const ctx : *Self = @ptrCast(@alignCast(srv));
+                const client = Client{.socket = _client};
+
+                if (callbacks.onDisconnect) |ondisconnect| {
+                    @call(.always_inline, ondisconnect, .{ ctx, &client });
                 }
             }
         }.callback;
@@ -92,6 +105,7 @@ pub const Server = struct {
                 }
             }
         }.callback;
+
     }
 
 };
