@@ -5,6 +5,10 @@
         .libapenetwork = .{
             .path = "./pkg/libapenetwork",
         },
+
+        .llhttp = .{
+            .path = "./pkg/llhttp"
+        }
     },
     .paths = .{""},
 }
