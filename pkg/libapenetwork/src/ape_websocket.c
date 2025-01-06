@@ -71,8 +71,6 @@ void ape_ws_compute_sha1_key(const char *key, unsigned int key_len, unsigned cha
     memcpy(payload, key, key_len);
     memcpy(payload + key_len, WS_GUID, sizeof(WS_GUID) - 1);
 
-    printf("Copying sha1 key to %p\n", digest);
-
     sha1_csum((unsigned char *)payload, (sizeof(WS_GUID) - 1) + key_len, digest);
 }
 
