@@ -13,7 +13,9 @@ fn http_on_header_field(state: [*c]llhttp.c.llhttp_t, data: [*c]const u8, size: 
     const parser : *HttpParserState = @fieldParentPtr("state", @as(*llhttp.c.llhttp_t, state));
 
     const allocator = parser.arena.allocator();
-    const field = allocator.dupe(u8, data[0..size]) catch return 0;
+
+    // Store a copy of the lower case version of the field
+    const field = std.ascii.allocLowerString(allocator, data[0..size]) catch return 0;
 
     parser.headers.put(field, "") catch return 0;
 
