@@ -4,21 +4,30 @@ const apenetwork = @import("libapenetwork");
 
 
 const http_parser_settings : llhttp.c.llhttp_settings_t  = .{
-    .on_method_complete = http_on_method_complete,
-    .on_header_field = http_on_header_field
+    .on_header_field = http_on_header_field,
+    .on_header_value = http_on_header_value
 };
 
-fn http_on_method_complete(_: [*c]llhttp.c.llhttp_t) callconv(.C) c_int {
-    std.debug.print("Method complete\n", .{});
+
+fn http_on_header_field(state: [*c]llhttp.c.llhttp_t, data: [*c]const u8, size: usize) callconv(.C) c_int {
+    const parser : *HttpParserState = @fieldParentPtr("state", @as(*llhttp.c.llhttp_t, state));
+
+    const allocator = parser.arena.allocator();
+    const field = allocator.dupe(u8, data[0..size]) catch return 0;
+
+    parser.headers.put(field, "") catch return 0;
+
+    parser._lastHeaderKey = field;
+
     return 0;
 }
 
-fn http_on_header_field(state: [*c]llhttp.c.llhttp_t, data: [*c]const u8, size: usize) callconv(.C) c_int {
-    std.debug.print("got header field {s}\n", .{data[0..size]});
-
+fn http_on_header_value(state: [*c]llhttp.c.llhttp_t, data: [*c]const u8, size: usize) callconv(.C) c_int {
     const parser : *HttpParserState = @fieldParentPtr("state", @as(*llhttp.c.llhttp_t, state));
 
-    parser.headers.put(data[0..size], "") catch return 0;
+    const allocator = parser.arena.allocator();
+    const entry = parser.headers.getEntry(parser._lastHeaderKey.?);
+    entry.?.value_ptr.* = allocator.dupe(u8, data[0..size]) catch return 0;
 
     return 0;
 }
@@ -43,12 +52,17 @@ fn client_ondata(_: *apenetwork.Server, client: *const apenetwork.Client, data: 
 
 const HttpParserState = struct {
     state: llhttp.c.llhttp_t,
-    headers: std.StringArrayHashMap([]const u8),
+    headers: std.StringHashMap([]const u8),
     allocator: std.mem.Allocator,
+    arena: std.heap.ArenaAllocator,
+
+    _lastHeaderKey: ?[]const u8 = null,
 
     pub fn init(allocator: std.mem.Allocator) HttpParserState {
+
         return HttpParserState {
             .allocator = allocator,
+            .arena = std.heap.ArenaAllocator.init(allocator),
             .state = state: {
                 var parser : llhttp.c.llhttp_t = .{};
 
@@ -58,12 +72,13 @@ const HttpParserState = struct {
 
                 break :state parser;
             },
-            .headers = .init(allocator)
+            .headers = std.StringHashMap([]const u8).init(allocator)
         };
     }
 
     pub fn deinit(self: *HttpParserState) void {
         self.headers.deinit();
+        self.arena.deinit();
     }
 };
 
@@ -79,7 +94,6 @@ pub const HttpServer = struct {
     }
 
     pub fn start(self: *HttpServer, port: u16) !void {
-        std.debug.print("Starting http server on port {d}\n", .{port});
         try self.server.start(port, .{
             .onConnect = struct {
                 fn connect(server: *apenetwork.Server, client: *const apenetwork.Client) void {
