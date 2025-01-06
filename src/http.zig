@@ -39,7 +39,7 @@ fn http_on_header_value_complete(state: [*c]llhttp.c.llhttp_t) callconv(.C) c_in
     const allocator = parser.arena.allocator();
 
     const key = std.ascii.allocLowerString(allocator, parser.headers_state.acc_field.items) catch return 0;
-    const value = std.ascii.allocLowerString(allocator, parser.headers_state.acc_value.items) catch return 0;
+    const value = allocator.dupe(u8, parser.headers_state.acc_value.items) catch return 0;
 
     parser.headers.put(key, value) catch return 0;
 
