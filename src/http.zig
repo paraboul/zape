@@ -5,7 +5,10 @@ const apenetwork = @import("libapenetwork");
 
 const http_parser_settings : llhttp.c.llhttp_settings_t  = .{
     .on_header_field = http_on_header_field,
-    .on_header_value = http_on_header_value
+    .on_header_value = http_on_header_value,
+    .on_header_field_complete = http_on_header_field_complete,
+    .on_header_value_complete = http_on_header_value_complete,
+    .on_headers_complete = http_on_headers_complete
 };
 
 
@@ -14,12 +17,31 @@ fn http_on_header_field(state: [*c]llhttp.c.llhttp_t, data: [*c]const u8, size: 
 
     const allocator = parser.arena.allocator();
 
-    // Store a copy of the lower case version of the field
-    const field = std.ascii.allocLowerString(allocator, data[0..size]) catch return 0;
+    parser.headers_state.acc_field.appendSlice(allocator, data[0..size]) catch return 0;
 
-    parser.headers.put(field, "") catch return 0;
+    return 0;
+}
 
-    parser._lastHeaderKey = field;
+fn http_on_header_field_complete(state: [*c]llhttp.c.llhttp_t) callconv(.C) c_int {
+    const parser : *HttpParserState = @fieldParentPtr("state", @as(*llhttp.c.llhttp_t, state));
+
+    std.debug.print("Header field complete {s}\n", .{parser.headers_state.acc_field.items});
+
+    return 0;
+}
+
+fn http_on_header_value_complete(state: [*c]llhttp.c.llhttp_t) callconv(.C) c_int {
+    const parser : *HttpParserState = @fieldParentPtr("state", @as(*llhttp.c.llhttp_t, state));
+
+    const allocator = parser.arena.allocator();
+
+    const key = std.ascii.allocLowerString(allocator, parser.headers_state.acc_field.items) catch return 0;
+    const value = std.ascii.allocLowerString(allocator, parser.headers_state.acc_value.items) catch return 0;
+
+    parser.headers.put(key, value) catch return 0;
+
+    parser.headers_state.acc_field.resize(allocator, 0) catch return 0;
+    parser.headers_state.acc_value.resize(allocator, 0) catch return 0;
 
     return 0;
 }
@@ -28,8 +50,19 @@ fn http_on_header_value(state: [*c]llhttp.c.llhttp_t, data: [*c]const u8, size: 
     const parser : *HttpParserState = @fieldParentPtr("state", @as(*llhttp.c.llhttp_t, state));
 
     const allocator = parser.arena.allocator();
-    const entry = parser.headers.getEntry(parser._lastHeaderKey.?);
-    entry.?.value_ptr.* = allocator.dupe(u8, data[0..size]) catch return 0;
+
+    parser.headers_state.acc_value.appendSlice(allocator, data[0..size]) catch return 0;
+
+    return 0;
+}
+
+fn http_on_headers_complete(state: [*c]llhttp.c.llhttp_t) callconv(.C) c_int {
+    const parser : *HttpParserState = @fieldParentPtr("state", @as(*llhttp.c.llhttp_t, state));
+
+    var entries = parser.headers.iterator();
+    while (entries.next()) |header| {
+        std.debug.print("Headers complete {s}\n", .{header.key_ptr.*});
+    }
 
     return 0;
 }
@@ -47,8 +80,8 @@ fn client_ondata(_: *apenetwork.Server, client: *const apenetwork.Client, data: 
     const llhttp_errno = llhttp.c.llhttp_execute(&parser.state, data.ptr, data.len);
 
     switch (llhttp_errno) {
-        llhttp.c.HPE_OK => std.debug.print("Success parse", .{}),
-        else => std.debug.print("Failed parse {s} {s}", .{llhttp.c.llhttp_errno_name(llhttp_errno), parser.state.reason})
+        llhttp.c.HPE_OK => std.debug.print("Success parse\n", .{}),
+        else => std.debug.print("Failed parse {s} {s}\n", .{llhttp.c.llhttp_errno_name(llhttp_errno), parser.state.reason})
     }
 }
 
@@ -58,7 +91,10 @@ const HttpParserState = struct {
     allocator: std.mem.Allocator,
     arena: std.heap.ArenaAllocator,
 
-    _lastHeaderKey: ?[]const u8 = null,
+    headers_state: struct {
+        acc_field: std.ArrayListUnmanaged(u8) = .{},
+        acc_value: std.ArrayListUnmanaged(u8) = .{}
+    } = .{},
 
     pub fn init(allocator: std.mem.Allocator) HttpParserState {
 
