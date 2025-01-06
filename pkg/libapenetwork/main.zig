@@ -36,7 +36,6 @@ pub const Client = struct {
            .copy => c.APE_DATA_COPY
         });
 
-        std.debug.print("[out] {s}", .{data});
     }
 
     pub fn tcpBufferStart(self: *const Self) void {

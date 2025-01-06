@@ -76,7 +76,6 @@ fn client_ondata(_: *apenetwork.Server, client: *const apenetwork.Client, data: 
 
             if (llhttp.c.llhttp_get_upgrade(&parser.state) == 1) {
                 if (parser.headers.get("sec-websocket-key")) |wskey| {
-                    std.debug.print("WS Key {s}\n", .{wskey});
 
                     var digest :[20]u8 = undefined;
                     var b64key :[30]u8 = undefined;
@@ -84,11 +83,12 @@ fn client_ondata(_: *apenetwork.Server, client: *const apenetwork.Client, data: 
                     apenetwork.c.ape_ws_compute_sha1_key(wskey.ptr, @intCast(wskey.len), &digest);
                     const b64key_slice = std.base64.standard.Encoder.encode(&b64key, &digest);
 
+                    client.tcpBufferStart();
                     client.write(apenetwork.c.WEBSOCKET_HARDCODED_HEADERS, .static);
                     client.write("Sec-WebSocket-Accept: ", .static);
                     client.write(b64key_slice, .copy);
                     client.write("\r\nSec-WebSocket-Origin: 127.0.0.1\r\n\r\n", .static);
-
+                    client.tcpBufferEnd();
                 }
             }
 
