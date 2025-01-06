@@ -60,20 +60,32 @@ void ape_ws_init(websocket_state *state, int isclient)
     state->prevstate                     = 0;
 }
 
+void ape_ws_compute_sha1_key(const char *key, unsigned int key_len, unsigned char *digest)
+{
+    char payload[128];
+
+    if (key_len > 32) {
+        return;
+    }
+
+    memcpy(payload, key, key_len);
+    memcpy(payload + key_len, WS_GUID, sizeof(WS_GUID) - 1);
+
+    printf("Copying sha1 key to %p\n", digest);
+
+    sha1_csum((unsigned char *)payload, (sizeof(WS_GUID) - 1) + key_len, digest);
+}
+
 char *ape_ws_compute_key(const char *key, unsigned int key_len)
 {
     unsigned char digest[20];
-    char out[128];
     char *b64;
 
     if (key_len > 32) {
         return NULL;
     }
 
-    memcpy(out, key, key_len);
-    memcpy(out + key_len, WS_GUID, sizeof(WS_GUID) - 1);
-
-    sha1_csum((unsigned char *)out, (sizeof(WS_GUID) - 1) + key_len, digest);
+    ape_ws_compute_sha1_key(key, key_len, digest);
 
     b64 = base64_encode(digest, 20);
 
@@ -214,7 +226,7 @@ static int ape_ws_process_end_message(websocket_state *websocket)
         {
             ws_frame_state fs;
             int isfin = (websocket->frame_payload.start & 0xF0) == 0x80;
-            
+
             if (isfin) {
                 fs = WS_FRAME_FINISH;
             } else if (opcode == 0) {
@@ -372,4 +384,3 @@ void ape_ws_process_frame(websocket_state *websocket, const char *buf,
         websocket->frame_pos++;
     }
 }
-

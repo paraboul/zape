@@ -10,6 +10,7 @@ const http_parser_settings : llhttp.c.llhttp_settings_t  = .{
     .on_header_field_complete = http_on_header_field_complete,
     .on_header_value_complete = http_on_header_value_complete,
     .on_headers_complete = http_on_headers_complete,
+    .on_message_complete = http_on_message_complete
 };
 
 fn http_on_parse_header_data(comptime field_name: []const u8) type {
@@ -18,18 +19,14 @@ fn http_on_parse_header_data(comptime field_name: []const u8) type {
             const parser : *HttpParserState = @fieldParentPtr("state", @as(*llhttp.c.llhttp_t, state));
             const allocator = parser.arena.allocator();
 
-            @field(parser.headers_state, field_name).appendSlice(allocator, data[0..size]) catch return 0;
+            @field(parser.headers_state, field_name).appendSlice(allocator, data[0..size]) catch return -1;
 
             return 0;
         }
     };
 }
 
-fn http_on_header_field_complete(state: [*c]llhttp.c.llhttp_t) callconv(.C) c_int {
-    const parser : *HttpParserState = @fieldParentPtr("state", @as(*llhttp.c.llhttp_t, state));
-
-    std.debug.print("Header field complete {s}\n", .{parser.headers_state.acc_field.items});
-
+fn http_on_header_field_complete(_: [*c]llhttp.c.llhttp_t) callconv(.C) c_int {
     return 0;
 }
 
@@ -59,31 +56,43 @@ fn http_on_header_value(state: [*c]llhttp.c.llhttp_t, data: [*c]const u8, size: 
     return 0;
 }
 
-fn http_on_headers_complete(state: [*c]llhttp.c.llhttp_t) callconv(.C) c_int {
-    const parser : *HttpParserState = @fieldParentPtr("state", @as(*llhttp.c.llhttp_t, state));
-
-    var entries = parser.headers.iterator();
-    while (entries.next()) |header| {
-        std.debug.print("Headers complete {s}\n", .{header.key_ptr.*});
-    }
-
-    return 0;
+fn http_on_headers_complete(_: [*c]llhttp.c.llhttp_t) callconv(.C) c_int {
+    return 1;
 }
 
-fn client_connected(server: *apenetwork.Server, _: *const apenetwork.Client) void {
-
-    // Retrieve HttpServer address from the server address
-    const httpserver : *HttpServer = @fieldParentPtr("server", server);
-
-    std.debug.print("New client connected to http server at address {*} at base {*}\n", .{httpserver, server});
+fn http_on_message_complete(_: [*c]llhttp.c.llhttp_t) callconv(.C) c_int {
+    return 1;
 }
+
+fn client_connected(_: *apenetwork.Server, _: *const apenetwork.Client) void {}
 
 fn client_ondata(_: *apenetwork.Server, client: *const apenetwork.Client, data: []const u8) void {
     const parser : *HttpParserState = @ptrCast(@alignCast(client.socket.*.ctx orelse return));
     const llhttp_errno = llhttp.c.llhttp_execute(&parser.state, data.ptr, data.len);
 
     switch (llhttp_errno) {
-        llhttp.c.HPE_OK => std.debug.print("Success parse\n", .{}),
+        llhttp.c.HPE_OK => std.debug.print("Parial parse ok\n", .{}),
+        llhttp.c.HPE_CB_MESSAGE_COMPLETE => {
+
+            if (llhttp.c.llhttp_get_upgrade(&parser.state) == 1) {
+                if (parser.headers.get("sec-websocket-key")) |wskey| {
+                    std.debug.print("WS Key {s}\n", .{wskey});
+
+                    var digest :[20]u8 = undefined;
+                    var b64key :[30]u8 = undefined;
+
+                    apenetwork.c.ape_ws_compute_sha1_key(wskey.ptr, @intCast(wskey.len), &digest);
+                    const b64key_slice = std.base64.standard.Encoder.encode(&b64key, &digest);
+
+                    client.write(apenetwork.c.WEBSOCKET_HARDCODED_HEADERS, .static);
+                    client.write("Sec-WebSocket-Accept: ", .static);
+                    client.write(b64key_slice, .copy);
+                    client.write("\r\nSec-WebSocket-Origin: 127.0.0.1\r\n\r\n", .static);
+
+                }
+            }
+
+        },
         else => std.debug.print("Failed parse {s} {s}\n", .{llhttp.c.llhttp_errno_name(llhttp_errno), parser.state.reason})
     }
 }

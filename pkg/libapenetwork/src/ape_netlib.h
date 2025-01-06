@@ -11,6 +11,7 @@
 #include "ape_socket.h"
 #include "ape_events_loop.h"
 #include "ape_timers_next.h"
+#include "ape_websocket.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -28,4 +29,3 @@ ape_global *APE_get();
 #endif
 
 #endif
-
