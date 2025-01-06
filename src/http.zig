@@ -4,22 +4,25 @@ const apenetwork = @import("libapenetwork");
 
 
 const http_parser_settings : llhttp.c.llhttp_settings_t  = .{
-    .on_header_field = http_on_header_field,
-    .on_header_value = http_on_header_value,
+    .on_url = http_on_parse_header_data("acc_url").func,
+    .on_header_field = http_on_parse_header_data("acc_field").func,
+    .on_header_value = http_on_parse_header_data("acc_value").func,
     .on_header_field_complete = http_on_header_field_complete,
     .on_header_value_complete = http_on_header_value_complete,
-    .on_headers_complete = http_on_headers_complete
+    .on_headers_complete = http_on_headers_complete,
 };
 
+fn http_on_parse_header_data(comptime field_name: []const u8) type {
+    return struct {
+        fn func(state: [*c]llhttp.c.llhttp_t, data: [*c]const u8, size: usize) callconv(.C) c_int {
+            const parser : *HttpParserState = @fieldParentPtr("state", @as(*llhttp.c.llhttp_t, state));
+            const allocator = parser.arena.allocator();
 
-fn http_on_header_field(state: [*c]llhttp.c.llhttp_t, data: [*c]const u8, size: usize) callconv(.C) c_int {
-    const parser : *HttpParserState = @fieldParentPtr("state", @as(*llhttp.c.llhttp_t, state));
+            @field(parser.headers_state, field_name).appendSlice(allocator, data[0..size]) catch return 0;
 
-    const allocator = parser.arena.allocator();
-
-    parser.headers_state.acc_field.appendSlice(allocator, data[0..size]) catch return 0;
-
-    return 0;
+            return 0;
+        }
+    };
 }
 
 fn http_on_header_field_complete(state: [*c]llhttp.c.llhttp_t) callconv(.C) c_int {
@@ -93,7 +96,8 @@ const HttpParserState = struct {
 
     headers_state: struct {
         acc_field: std.ArrayListUnmanaged(u8) = .{},
-        acc_value: std.ArrayListUnmanaged(u8) = .{}
+        acc_value: std.ArrayListUnmanaged(u8) = .{},
+        acc_url: std.ArrayListUnmanaged(u8) = .{}
     } = .{},
 
     pub fn init(allocator: std.mem.Allocator) HttpParserState {
