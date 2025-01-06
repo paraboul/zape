@@ -107,10 +107,7 @@ pub const Server = struct {
         }.callback;
 
     }
-
 };
-
-
 
 pub fn startLoop() void {
     c.APE_loop_run(c.APE_get());

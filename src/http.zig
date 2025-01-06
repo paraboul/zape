@@ -4,9 +4,24 @@ const apenetwork = @import("libapenetwork");
 
 
 const http_parser_settings : llhttp.c.llhttp_settings_t  = .{
-    .on_method_complete = http_on_method_complete
+    .on_method_complete = http_on_method_complete,
+    .on_header_field = http_on_header_field
 };
 
+fn http_on_method_complete(_: [*c]llhttp.c.llhttp_t) callconv(.C) c_int {
+    std.debug.print("Method complete\n", .{});
+    return 0;
+}
+
+fn http_on_header_field(state: [*c]llhttp.c.llhttp_t, data: [*c]const u8, size: usize) callconv(.C) c_int {
+    std.debug.print("got header field {s}\n", .{data[0..size]});
+
+    const parser : *HttpParserState = @fieldParentPtr("state", @as(*llhttp.c.llhttp_t, state));
+
+    parser.headers.put(data[0..size], "") catch return 0;
+
+    return 0;
+}
 
 fn client_connected(server: *apenetwork.Server, _: *const apenetwork.Client) void {
 
@@ -17,19 +32,40 @@ fn client_connected(server: *apenetwork.Server, _: *const apenetwork.Client) voi
 }
 
 fn client_ondata(_: *apenetwork.Server, client: *const apenetwork.Client, data: []const u8) void {
-    const parser : *llhttp.c.llhttp_t = @ptrCast(@alignCast(client.socket.*.ctx orelse return));
-    const llhttp_errno = llhttp.c.llhttp_execute(parser, data.ptr, data.len);
+    const parser : *HttpParserState = @ptrCast(@alignCast(client.socket.*.ctx orelse return));
+    const llhttp_errno = llhttp.c.llhttp_execute(&parser.state, data.ptr, data.len);
 
     switch (llhttp_errno) {
         llhttp.c.HPE_OK => std.debug.print("Success parse", .{}),
-        else => std.debug.print("Failed parse {s} {s}", .{llhttp.c.llhttp_errno_name(llhttp_errno), parser.reason})
+        else => std.debug.print("Failed parse {s} {s}", .{llhttp.c.llhttp_errno_name(llhttp_errno), parser.state.reason})
     }
 }
 
-fn http_on_method_complete(_: [*c]llhttp.c.llhttp_t) callconv(.C) c_int {
-    std.debug.print("Method complete\n", .{});
-    return 0;
-}
+const HttpParserState = struct {
+    state: llhttp.c.llhttp_t,
+    headers: std.StringArrayHashMap([]const u8),
+    allocator: std.mem.Allocator,
+
+    pub fn init(allocator: std.mem.Allocator) HttpParserState {
+        return HttpParserState {
+            .allocator = allocator,
+            .state = state: {
+                var parser : llhttp.c.llhttp_t = .{};
+
+                llhttp.c.llhttp_init(&parser, llhttp.c.HTTP_BOTH, &http_parser_settings);
+                llhttp.c.llhttp_set_lenient_optional_cr_before_lf(&parser, 1);
+                llhttp.c.llhttp_set_lenient_optional_lf_after_cr(&parser, 1);
+
+                break :state parser;
+            },
+            .headers = .init(allocator)
+        };
+    }
+
+    pub fn deinit(self: *HttpParserState) void {
+        self.headers.deinit();
+    }
+};
 
 pub const HttpServer = struct {
     server: apenetwork.Server,
@@ -50,10 +86,8 @@ pub const HttpServer = struct {
                     const httpserver : *HttpServer = @fieldParentPtr("server", server);
 
                     client.socket.*.ctx = parser: {
-                        const parser = httpserver.allocator.create(llhttp.c.llhttp_t) catch break :parser null;
-
-                        llhttp.c.llhttp_init(parser, llhttp.c.HTTP_BOTH, &http_parser_settings);
-                        llhttp.c.llhttp_set_lenient_optional_cr_before_lf(parser, 1);
+                        const parser = httpserver.allocator.create(HttpParserState) catch break :parser null;
+                        parser.* = HttpParserState.init(httpserver.allocator);
 
                         break :parser parser;
                     };
@@ -65,8 +99,9 @@ pub const HttpServer = struct {
             .onDisconnect = struct {
                 fn disconnect(server: *apenetwork.Server, client: *const apenetwork.Client) void {
                     const httpserver : *HttpServer = @fieldParentPtr("server", server);
-                    const parser : *llhttp.c.llhttp_t = @ptrCast(@alignCast(client.socket.*.ctx orelse return));
+                    var parser : *HttpParserState = @ptrCast(@alignCast(client.socket.*.ctx orelse return));
 
+                    parser.deinit();
                     httpserver.allocator.destroy(parser);
 
                 }
