@@ -1,5 +1,6 @@
 pub const c = @import("c.zig").c;
 const std = @import("std");
+const builtin = @import("builtin");
 
 pub const ShutdownAction = enum {
     queue,
@@ -34,6 +35,28 @@ pub const Client = struct {
            .own => c.APE_DATA_OWN,
            .copy => c.APE_DATA_COPY
         });
+
+        std.debug.print("[out] {s}", .{data});
+    }
+
+    pub fn tcpBufferStart(self: *const Self) void {
+        switch (builtin.os.tag) {
+            .linux => {
+                const state : u8 = 1;
+                std.posix.setsockopt(self.socket.*.s.fd, std.posix.IPPROTO.TCP, std.posix.TCP.CORK, &state);
+            },
+            else => {}
+        }
+    }
+
+    pub fn tcpBufferEnd(self: *const Self) void {
+        switch (builtin.os.tag) {
+            .linux => {
+                const state : u8 = 0;
+                std.posix.setsockopt(self.socket.*.s.fd, std.posix.IPPROTO.TCP, std.posix.TCP.CORK, &state);
+            },
+            else => {}
+        }
     }
 
     pub fn close(self: *const Self, action: ShutdownAction) void {
