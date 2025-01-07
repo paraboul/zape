@@ -68,12 +68,19 @@ fn client_connected(_: *apenetwork.Server, _: *const apenetwork.Client) void {}
 
 fn client_ondata(_: *apenetwork.Server, client: *const apenetwork.Client, data: []const u8) void {
     const parser : *HttpParserState = @ptrCast(@alignCast(client.socket.*.ctx orelse return));
+
+    if (parser.upgraded) {
+        std.debug.print("Handle WS Frame here", .{});
+        return;
+    }
+
     const llhttp_errno = llhttp.c.llhttp_execute(&parser.state, data.ptr, data.len);
 
+    std.debug.print("Got data {s}", .{data});
     switch (llhttp_errno) {
         llhttp.c.HPE_OK => std.debug.print("Parial parse ok\n", .{}),
         llhttp.c.HPE_CB_MESSAGE_COMPLETE => {
-
+            std.debug.print("message complete\n", .{});
             if (llhttp.c.llhttp_get_upgrade(&parser.state) == 1) {
                 if (parser.headers.get("sec-websocket-key")) |wskey| {
 
@@ -89,6 +96,8 @@ fn client_ondata(_: *apenetwork.Server, client: *const apenetwork.Client, data: 
                     client.write(b64key_slice, .copy);
                     client.write("\r\nSec-WebSocket-Origin: 127.0.0.1\r\n\r\n", .static);
                     client.tcpBufferEnd();
+
+                    parser.upgraded = true;
                 }
             }
 
@@ -100,6 +109,8 @@ fn client_ondata(_: *apenetwork.Server, client: *const apenetwork.Client, data: 
 const HttpParserState = struct {
     state: llhttp.c.llhttp_t,
     headers: std.StringHashMap([]const u8),
+    upgraded: bool = false,
+
     allocator: std.mem.Allocator,
     arena: std.heap.ArenaAllocator,
 
@@ -133,6 +144,13 @@ const HttpParserState = struct {
     }
 };
 
+const HttpCallbacks =  struct {
+    onConnect: ?fn () void = null,
+    onDisconnect: ?fn () void = null,
+    onRequest: ?fn () void = null
+};
+
+
 pub const HttpServer = struct {
     server: apenetwork.Server,
     allocator: std.mem.Allocator,
@@ -140,11 +158,11 @@ pub const HttpServer = struct {
     pub fn init(allocator: std.mem.Allocator) !HttpServer {
         return HttpServer{
             .server = try apenetwork.Server.init(),
-            .allocator = allocator,
+            .allocator = allocator
         };
     }
 
-    pub fn start(self: *HttpServer, port: u16) !void {
+    pub fn start(self: *HttpServer, port: u16, comptime callbacks: HttpCallbacks) !void {
         try self.server.start(port, .{
             .onConnect = struct {
                 fn connect(server: *apenetwork.Server, client: *const apenetwork.Client) void {
@@ -172,7 +190,15 @@ pub const HttpServer = struct {
                 }
             }.disconnect,
 
-            .onData = client_ondata
+            .onData = struct {
+                fn ondata(server: *apenetwork.Server, client: *const apenetwork.Client, data: []const u8) void {
+                    @call(.always_inline, client_ondata, .{server, client, data});
+
+                    if (callbacks.onRequest) |_| {
+
+                    }
+                }
+            }.ondata
         });
     }
 };
