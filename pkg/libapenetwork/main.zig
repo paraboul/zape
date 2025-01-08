@@ -66,11 +66,10 @@ pub const Client = struct {
     }
 };
 
-
 const ServerCallbacks = struct {
-    onConnect: ?fn (*Server, *const Client) void = null,
-    onDisconnect: ?fn (*Server, *const Client) void = null,
-    onData: ?fn (*Server, *const Client, []const u8) void = null
+    onConnect: ?fn (*Server, Client) void = null,
+    onDisconnect: ?fn (*Server, Client) void = null,
+    onData: ?fn (*Server, Client, []const u8) void = null
 };
 
 pub const Server = struct {
@@ -99,7 +98,7 @@ pub const Server = struct {
                 const client = Client{.socket = _client};
 
                 if (callbacks.onConnect) |onconnect| {
-                    @call(.always_inline, onconnect, .{ ctx, &client });
+                    @call(.always_inline, onconnect, .{ ctx, client });
                 }
             }
         }.callback;
@@ -111,7 +110,7 @@ pub const Server = struct {
                 const client = Client{.socket = _client};
 
                 if (callbacks.onDisconnect) |ondisconnect| {
-                    @call(.always_inline, ondisconnect, .{ ctx, &client });
+                    @call(.always_inline, ondisconnect, .{ ctx, client });
                 }
             }
         }.callback;
@@ -123,7 +122,7 @@ pub const Server = struct {
                 const client = Client{.socket = _client};
 
                 if (callbacks.onData) |ondata| {
-                    @call(.always_inline, ondata, .{ ctx, &client, data[0..len] });
+                    @call(.always_inline, ondata, .{ ctx, client, data[0..len] });
                 }
             }
         }.callback;

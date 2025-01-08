@@ -69,7 +69,7 @@ fn http_on_message_complete(state: [*c]llhttp.c.llhttp_t) callconv(.C) c_int {
     return 0;
 }
 
-fn client_connected(_: *apenetwork.Server, _: *const apenetwork.Client) void {}
+fn client_connected(_: *apenetwork.Server, _: apenetwork.Client) void {}
 
 const ParseReturnState = union(enum) {
     ok,
@@ -77,7 +77,7 @@ const ParseReturnState = union(enum) {
     parse_error: llhttp.c.llhttp_errno_t
 };
 
-fn client_ondata(_: *apenetwork.Server, client: *const apenetwork.Client, data: []const u8) ParseReturnState {
+fn client_ondata(_: *apenetwork.Server, client: apenetwork.Client, data: []const u8) ParseReturnState {
     const parser : *HttpParserState = @ptrCast(@alignCast(client.socket.*.ctx orelse return .ok));
 
     if (parser.upgraded) {
@@ -179,7 +179,7 @@ pub const HttpServer = struct {
     pub fn start(self: *HttpServer, port: u16) !void {
         try self.server.start(port, .{
             .onConnect = struct {
-                fn connect(server: *apenetwork.Server, client: *const apenetwork.Client) void {
+                fn connect(server: *apenetwork.Server, client: apenetwork.Client) void {
                     const httpserver : *HttpServer = @fieldParentPtr("server", server);
 
                     client.socket.*.ctx = parser: {
@@ -194,7 +194,7 @@ pub const HttpServer = struct {
             }.connect,
 
             .onDisconnect = struct {
-                fn disconnect(server: *apenetwork.Server, client: *const apenetwork.Client) void {
+                fn disconnect(server: *apenetwork.Server, client: apenetwork.Client) void {
                     const httpserver : *HttpServer = @fieldParentPtr("server", server);
                     var parser : *HttpParserState = @ptrCast(@alignCast(client.socket.*.ctx orelse return));
 
@@ -204,7 +204,7 @@ pub const HttpServer = struct {
             }.disconnect,
 
             .onData = struct {
-                fn ondata(server: *apenetwork.Server, client: *const apenetwork.Client, data: []const u8) void {
+                fn ondata(server: *apenetwork.Server, client: apenetwork.Client, data: []const u8) void {
                     switch(@call(.always_inline, client_ondata, .{server, client, data})) {
                         .parse_error => |_| {
                             client.write("HTTP/1.1 400 Bad Request\r\n\r\n", .static);
