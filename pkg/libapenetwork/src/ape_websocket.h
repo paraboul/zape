@@ -26,12 +26,14 @@ typedef enum {
     WS_FRAME_FINISH
 } ws_frame_state;
 
+typedef void (*ape_ws_on_frame_t)(struct _websocket_state *state, const unsigned char *data,
+                           ssize_t len, int binary, ws_frame_state framestate);
+
 typedef struct _websocket_state {
     ape_socket *socket;
 
     unsigned char *data;
-    void (*on_frame)(struct _websocket_state *state, const unsigned char *data, ssize_t len,
-                     int binary, ws_frame_state framestate);
+    ape_ws_on_frame_t on_frame;
 
     unsigned short int error;
     // ws_version version;
@@ -66,7 +68,7 @@ typedef struct _websocket_state {
 extern "C" {
 #endif
 
-websocket_state *ape_ws_create(int isclient);
+websocket_state *ape_ws_create(int isclient, ape_socket *socket, ape_ws_on_frame_t on_frame_cb);
 void ape_ws_free(websocket_state *state);
 
 void ape_ws_init(websocket_state *state, int isclient);

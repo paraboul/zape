@@ -78,7 +78,7 @@ fn http_on_message_complete(state: [*c]llhttp.c.llhttp_t) callconv(.C) c_int {
 
 fn client_connected(_: *apenetwork.Server, _: apenetwork.Client) void {}
 
-fn client_ondata(_: *apenetwork.Server, client: apenetwork.Client, data: []const u8) ParseReturnState {
+fn client_onhttpdata(_: *apenetwork.Server, client: apenetwork.Client, data: []const u8) ParseReturnState {
     const parser : *HttpParserState = @ptrCast(@alignCast(client.socket.*.ctx orelse return .cont));
 
     const llhttp_errno = llhttp.c.llhttp_execute(&parser.state, data.ptr, data.len);
@@ -91,6 +91,13 @@ fn client_ondata(_: *apenetwork.Server, client: apenetwork.Client, data: []const
         },
         else => return .{.parse_error = llhttp_errno},
     };
+}
+
+fn client_onwsdata(_: *apenetwork.Server, client: apenetwork.Client, data: []const u8) void {
+    const parser : *HttpParserState = @ptrCast(@alignCast(client.socket.*.ctx orelse return));
+
+
+    apenetwork.c.ape_ws_process_frame(parser.websocket_state.?, data.ptr, data.len);
 }
 
 const HttpRequest = struct {
@@ -160,7 +167,14 @@ pub const HttpParserState = struct {
             client.write("\r\nSec-WebSocket-Origin: 127.0.0.1\r\n\r\n", .static);
             client.tcpBufferEnd();
 
-            self.websocket_state = apenetwork.c.ape_ws_create(0);
+            self.websocket_state = apenetwork.c.ape_ws_create(0, client.socket, struct {
+                fn on_frame(_: ?*apenetwork.c.websocket_state, data: [*c]const u8, len: isize, _: c_int, _: c_uint) callconv(.C) void {
+
+                    const message_length : u32 = @intCast(len);
+
+                    std.debug.print("WS Msg => {s}\n", .{data[0..message_length]});
+                }
+            }.on_frame);
 
             return true;
         }
@@ -232,14 +246,19 @@ pub const HttpServer = struct {
 
                     const parser : *HttpParserState = @ptrCast(@alignCast(client.socket.*.ctx));
 
-                    switch(@call(.always_inline, client_ondata, .{server, client, data})) {
+                    if (parser.websocket_state != null) {
+                        @call(.always_inline, client_onwsdata, .{server, client, data});
+                        return;
+                    }
+
+                    switch(@call(.always_inline, client_onhttpdata, .{server, client, data})) {
                         .parse_error => |_| {
                             return error.HttpParseError;
                         },
 
                         .websocket_upgrade => {
                             if (callbacks.onWebSocketRequest) |onwebsocketrequest| {
-                                if (onwebsocketrequest(parser, client) and !parser.acceptWebSocket(client)) {
+                                if (!onwebsocketrequest(parser, client) or !parser.acceptWebSocket(client)) {
                                     return error.HttpUnsupportedWebSocket;
                                 }
                             }
