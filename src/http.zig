@@ -10,13 +10,24 @@ const ParseReturnState = union(enum) {
 };
 
 
-const HttpCallbacks =  struct {
-    onConnect: ?fn () void = null,
-    onDisconnect: ?fn () void = null,
-    onRequest: ?fn (* const HttpParserState, apenetwork.Client) void = null,
-    onWebSocketRequest: ?fn (* const HttpParserState, apenetwork.Client) bool = null,
-    onWebSocketFrame: ?fn (* const HttpParserState, [] const u8) void = null
-};
+pub fn WebSocketUserContextReturn(comptime T: type) type {
+    return struct {
+        accept: bool,
+        ctx: T
+    };
+}
+
+pub fn HttpServerConfig(comptime T: type) type {
+    return struct {
+        port: u16 = 80,
+
+        onConnect: ?fn () void = null,
+        onDisconnect: ?fn () void = null,
+        onRequest: ?fn (* const HttpParserState, apenetwork.Client) void = null,
+        onWebSocketRequest: ?fn (* const HttpParserState, apenetwork.Client) WebSocketUserContextReturn(T) = null,
+        onWebSocketFrame: ?fn (* const HttpParserState, [] const u8, *T) void = null,
+    };
+}
 
 const http_parser_settings : llhttp.c.llhttp_settings_t  = .{
     .on_url = http_on_parse_header_data("acc_url").func,
@@ -34,6 +45,8 @@ fn http_on_parse_header_data(comptime field_name: []const u8) type {
             const parser : *HttpParserState = @fieldParentPtr("state", @as(*llhttp.c.llhttp_t, state));
             const allocator = parser.arena.allocator();
 
+
+            @field(parser.headers_state, field_name).ensureTotalCapacity(allocator, 32) catch return -1;
             @field(parser.headers_state, field_name).appendSlice(allocator, data[0..size]) catch return -1;
 
             return 0;
@@ -130,6 +143,7 @@ pub const HttpParserState = struct {
     } = .{},
 
     websocket_state: ?*apenetwork.c.websocket_state = null,
+    websocket_user_ctx: ?*anyopaque = null,
 
     pub fn init(allocator: std.mem.Allocator) HttpParserState {
 
@@ -158,7 +172,7 @@ pub const HttpParserState = struct {
         }
     }
 
-    pub fn acceptWebSocket(self: *HttpParserState, client: apenetwork.Client, on_frame_cb: ?fn (* const HttpParserState, [] const u8) void) bool {
+    pub fn acceptWebSocket(self: *HttpParserState, client: apenetwork.Client, user_ctx: *anyopaque, on_frame_cb: fn (* const HttpParserState, [] const u8, user_ctx: *anyopaque) void) bool {
         if (self.headers.get("sec-websocket-key")) |wskey| {
 
             var digest :[20]u8 = undefined;
@@ -174,17 +188,19 @@ pub const HttpParserState = struct {
             client.write("\r\nSec-WebSocket-Origin: 127.0.0.1\r\n\r\n", .static);
             client.tcpBufferEnd();
 
+            self.websocket_user_ctx = user_ctx;
+
             self.websocket_state = apenetwork.c.ape_ws_create(0, client.socket, struct {
                 fn on_frame(ws_state: ?*apenetwork.c.websocket_state, data: [*c]const u8, len: isize, _: c_int, _: c_uint) callconv(.C) void {
 
-                    if (on_frame_cb == null or ws_state == null) {
+                    if (ws_state == null) {
                         return;
                     }
 
                     const message_length : u32 = @intCast(len);
                     const http_state : *HttpParserState = @ptrCast(@alignCast(apenetwork.c.ape_ws_get_socket(ws_state).?.*.ctx orelse return));
 
-                    @call(.always_inline, on_frame_cb.?, .{http_state, data[0..message_length]});
+                    @call(.always_inline, on_frame_cb, .{http_state, data[0..message_length], http_state.websocket_user_ctx.?});
                 }
             }.on_frame);
 
@@ -215,8 +231,8 @@ pub const HttpServer = struct {
         };
     }
 
-    pub fn start(self: *HttpServer, port: u16, comptime callbacks: HttpCallbacks) !void {
-        try self.server.start(port, .{
+    pub fn start(self: *HttpServer, comptime httpconfig: anytype) !void {
+        try self.server.start(httpconfig.port, .{
             .onConnect = struct {
                 fn connect(server: *apenetwork.Server, client: apenetwork.Client) void {
                     const httpserver : *HttpServer = @fieldParentPtr("server", server);
@@ -262,15 +278,28 @@ pub const HttpServer = struct {
                         },
 
                         .websocket_upgrade => {
-                            if (callbacks.onWebSocketRequest) |onwebsocketrequest| {
-                                if (!onwebsocketrequest(parser, client) or !parser.acceptWebSocket(client, callbacks.onWebSocketFrame)) {
+
+                            if (httpconfig.onWebSocketRequest) |onwebsocketrequest| {
+
+                                const result = onwebsocketrequest(parser, client);
+                                const user_ctx = try parser.arena.allocator().create(@TypeOf(result.ctx));
+                                user_ctx.* = result.ctx;
+
+                                if (!result.accept or !parser.acceptWebSocket(client, user_ctx, struct {
+                                    fn onframe(frame_state: * const HttpParserState, frame_data: [] const u8, ctx: *anyopaque) void {
+
+                                        if (httpconfig.onWebSocketFrame) |onwebsocketframe| {
+                                            onwebsocketframe(frame_state, frame_data, @alignCast(@ptrCast(ctx)));
+                                        }
+                                    }
+                                }.onframe)) {
                                     return error.HttpUnsupportedWebSocket;
                                 }
                             }
                         },
 
                         .done => {
-                            if (callbacks.onRequest) |onrequest| {
+                            if (httpconfig.onRequest) |onrequest| {
                                 onrequest(parser, client);
                             }
                         },
