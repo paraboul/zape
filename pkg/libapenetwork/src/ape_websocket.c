@@ -398,3 +398,7 @@ void ape_ws_process_frame(websocket_state *websocket, const char *buf,
         websocket->frame_pos++;
     }
 }
+
+ape_socket *ape_ws_get_socket(websocket_state *state) {
+    return state ? state->socket : NULL;
+}

@@ -54,9 +54,15 @@ pub fn main() !void {
             fn onWebSocketRequest(request: * const http.HttpParserState, _: apenetwork.Client) bool {
                 std.debug.print("Got websocket request {s}\n", .{request.getURL().?});
 
-                return false;
+                return true;
             }
-        }.onWebSocketRequest
+        }.onWebSocketRequest,
+
+        .onWebSocketFrame = struct {
+            fn onWebSocketFrame(_: * const http.HttpParserState, message: [] const u8) void {
+                std.debug.print("WS FRAME -> {s}\n", .{message});
+            }
+        }.onWebSocketFrame
 
     });
 

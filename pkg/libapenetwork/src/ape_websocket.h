@@ -69,6 +69,9 @@ extern "C" {
 #endif
 
 websocket_state *ape_ws_create(int isclient, ape_socket *socket, ape_ws_on_frame_t on_frame_cb);
+
+ape_socket *ape_ws_get_socket(websocket_state *state);
+
 void ape_ws_free(websocket_state *state);
 
 void ape_ws_init(websocket_state *state, int isclient);
