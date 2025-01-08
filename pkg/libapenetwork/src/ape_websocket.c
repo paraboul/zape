@@ -43,6 +43,20 @@ static uint64_t ntohl64(uint64_t n)
     return (a << 32) | b;
 }
 
+websocket_state *ape_ws_create(int isclient) {
+    websocket_state *state = malloc(sizeof(websocket_state));
+
+    ape_ws_init(state, isclient);
+
+    return state;
+}
+
+void ape_ws_free(websocket_state *state) {
+    if (state) {
+        free(state);
+    }
+}
+
 void ape_ws_init(websocket_state *state, int isclient)
 {
     state->socket     = NULL;

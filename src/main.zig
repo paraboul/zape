@@ -43,7 +43,22 @@ pub fn main() !void {
 
     var server = try http.HttpServer.init(gpa.allocator());
 
-    try server.start(80);
+    try server.start(80, .{
+        .onRequest = struct {
+            fn onrequest(request: * const http.HttpParserState, _: apenetwork.Client) void {
+                std.debug.print("Got a request {s}\n", .{request.getURL().?});
+            }
+        }.onrequest,
+
+        .onWebSocketRequest = struct {
+            fn onWebSocketRequest(request: * const http.HttpParserState, _: apenetwork.Client) bool {
+                std.debug.print("Got websocket request {s}\n", .{request.getURL().?});
+
+                return false;
+            }
+        }.onWebSocketRequest
+
+    });
 
     std.debug.print("Server http started at {*}\n", .{&server});
 

@@ -66,6 +66,9 @@ typedef struct _websocket_state {
 extern "C" {
 #endif
 
+websocket_state *ape_ws_create(int isclient);
+void ape_ws_free(websocket_state *state);
+
 void ape_ws_init(websocket_state *state, int isclient);
 void ape_ws_process_frame(websocket_state *websocket, const char *buf,
                           size_t len);

@@ -3,6 +3,14 @@ const llhttp = @import("llhttp");
 const apenetwork = @import("libapenetwork");
 
 
+const ParseReturnState = union(enum) {
+    cont,
+    done,
+    websocket_upgrade,
+    parse_error: llhttp.c.llhttp_errno_t
+};
+
+
 const http_parser_settings : llhttp.c.llhttp_settings_t  = .{
     .on_url = http_on_parse_header_data("acc_url").func,
     .on_header_field = http_on_parse_header_data("acc_field").func,
@@ -61,69 +69,42 @@ fn http_on_headers_complete(_: [*c]llhttp.c.llhttp_t) callconv(.C) c_int {
 }
 
 fn http_on_message_complete(state: [*c]llhttp.c.llhttp_t) callconv(.C) c_int {
-    // const parser : *HttpParserState = @fieldParentPtr("state", @as(*llhttp.c.llhttp_t, state));
+    const parser : *HttpParserState = @fieldParentPtr("state", @as(*llhttp.c.llhttp_t, state));
 
-    if (llhttp.c.llhttp_get_upgrade(state) == 1) {
-    }
+    parser.done = true;
 
     return 0;
 }
 
 fn client_connected(_: *apenetwork.Server, _: apenetwork.Client) void {}
 
-const ParseReturnState = union(enum) {
-    ok,
-    websocket_upgrade,
-    parse_error: llhttp.c.llhttp_errno_t
-};
-
 fn client_ondata(_: *apenetwork.Server, client: apenetwork.Client, data: []const u8) ParseReturnState {
-    const parser : *HttpParserState = @ptrCast(@alignCast(client.socket.*.ctx orelse return .ok));
-
-    if (parser.upgraded) {
-        // TODO: handle WS frame
-        return .websocket_upgrade;
-    }
+    const parser : *HttpParserState = @ptrCast(@alignCast(client.socket.*.ctx orelse return .cont));
 
     const llhttp_errno = llhttp.c.llhttp_execute(&parser.state, data.ptr, data.len);
 
     return switch (llhttp_errno) {
-        llhttp.c.HPE_OK => return .ok,
+        llhttp.c.HPE_OK => return if (parser.done) .done else .cont,
         llhttp.c.HPE_PAUSED_UPGRADE => {
-            parser.upgraded = true;
+            // TODO: Check that upgrade is actually websocket
             return .websocket_upgrade;
         },
-        // llhttp.c.HPE_CB_MESSAGE_COMPLETE => {
-        //     std.debug.print("message complete\n", .{});
-        //     if (llhttp.c.llhttp_get_upgrade(&parser.state) == 1) {
-        //         if (parser.headers.get("sec-websocket-key")) |wskey| {
-
-        //             var digest :[20]u8 = undefined;
-        //             var b64key :[30]u8 = undefined;
-
-        //             apenetwork.c.ape_ws_compute_sha1_key(wskey.ptr, @intCast(wskey.len), &digest);
-        //             const b64key_slice = std.base64.standard.Encoder.encode(&b64key, &digest);
-
-        //             client.tcpBufferStart();
-        //             client.write(apenetwork.c.WEBSOCKET_HARDCODED_HEADERS, .static);
-        //             client.write("Sec-WebSocket-Accept: ", .static);
-        //             client.write(b64key_slice, .copy);
-        //             client.write("\r\nSec-WebSocket-Origin: 127.0.0.1\r\n\r\n", .static);
-        //             client.tcpBufferEnd();
-
-        //             parser.upgraded = true;
-        //         }
-        //     }
-
-        // },
         else => return .{.parse_error = llhttp_errno},
     };
 }
 
-const HttpParserState = struct {
+const HttpRequest = struct {
+    state: * const HttpParserState,
+
+    pub fn getHeader(self: *const HttpRequest, key: [] const u8) ?[] const u8 {
+        return self.state.headers.get(key);
+    }
+};
+
+pub const HttpParserState = struct {
     state: llhttp.c.llhttp_t,
     headers: std.StringHashMap([]const u8),
-    upgraded: bool = false,
+    done: bool = false,
 
     allocator: std.mem.Allocator,
     arena: std.heap.ArenaAllocator,
@@ -133,6 +114,8 @@ const HttpParserState = struct {
         acc_value: std.ArrayListUnmanaged(u8) = .{},
         acc_url: std.ArrayListUnmanaged(u8) = .{}
     } = .{},
+
+    websocket_state: ?*apenetwork.c.websocket_state = null,
 
     pub fn init(allocator: std.mem.Allocator) HttpParserState {
 
@@ -155,15 +138,52 @@ const HttpParserState = struct {
     pub fn deinit(self: *HttpParserState) void {
         self.headers.deinit();
         self.arena.deinit();
+
+        if (self.websocket_state != null) {
+            apenetwork.c.ape_ws_free(self.websocket_state);
+        }
+    }
+
+    pub fn acceptWebSocket(self: *HttpParserState, client: apenetwork.Client) bool {
+        if (self.headers.get("sec-websocket-key")) |wskey| {
+
+            var digest :[20]u8 = undefined;
+            var b64key :[30]u8 = undefined;
+
+            apenetwork.c.ape_ws_compute_sha1_key(wskey.ptr, @intCast(wskey.len), &digest);
+            const b64key_slice = std.base64.standard.Encoder.encode(&b64key, &digest);
+
+            client.tcpBufferStart();
+            client.write(apenetwork.c.WEBSOCKET_HARDCODED_HEADERS, .static);
+            client.write("Sec-WebSocket-Accept: ", .static);
+            client.write(b64key_slice, .copy);
+            client.write("\r\nSec-WebSocket-Origin: 127.0.0.1\r\n\r\n", .static);
+            client.tcpBufferEnd();
+
+            self.websocket_state = apenetwork.c.ape_ws_create(0);
+
+            return true;
+        }
+
+        return false;
+    }
+
+    pub fn getURL(self: *const HttpParserState) ?[] const u8 {
+        if (!self.done) {
+            return null;
+        }
+
+        return self.headers_state.acc_url.items;
     }
 };
 
 const HttpCallbacks =  struct {
     onConnect: ?fn () void = null,
     onDisconnect: ?fn () void = null,
-    onRequest: ?fn () void = null
+    onRequest: ?fn (* const HttpParserState, apenetwork.Client) void = null,
+    onWebSocketRequest: ?fn (* const HttpParserState, apenetwork.Client) bool = null,
+    onWebSocketFrame: ?fn () void = null
 };
-
 
 pub const HttpServer = struct {
     server: apenetwork.Server,
@@ -176,7 +196,7 @@ pub const HttpServer = struct {
         };
     }
 
-    pub fn start(self: *HttpServer, port: u16) !void {
+    pub fn start(self: *HttpServer, port: u16, comptime callbacks: HttpCallbacks) !void {
         try self.server.start(port, .{
             .onConnect = struct {
                 fn connect(server: *apenetwork.Server, client: apenetwork.Client) void {
@@ -204,13 +224,33 @@ pub const HttpServer = struct {
             }.disconnect,
 
             .onData = struct {
-                fn ondata(server: *apenetwork.Server, client: apenetwork.Client, data: []const u8) void {
+                fn ondata(server: *apenetwork.Server, client: apenetwork.Client, data: []const u8) !void {
+                    errdefer {
+                        client.write("HTTP/1.1 400 Bad Request\r\n\r\n", .static);
+                        client.close(.queue);
+                    }
+
+                    const parser : *HttpParserState = @ptrCast(@alignCast(client.socket.*.ctx));
+
                     switch(@call(.always_inline, client_ondata, .{server, client, data})) {
                         .parse_error => |_| {
-                            client.write("HTTP/1.1 400 Bad Request\r\n\r\n", .static);
-                            client.close(.queue);
+                            return error.HttpParseError;
                         },
-                        .websocket_upgrade => std.debug.print("websocket uopgrade\n", .{}),
+
+                        .websocket_upgrade => {
+                            if (callbacks.onWebSocketRequest) |onwebsocketrequest| {
+                                if (onwebsocketrequest(parser, client) and !parser.acceptWebSocket(client)) {
+                                    return error.HttpUnsupportedWebSocket;
+                                }
+                            }
+                        },
+
+                        .done => {
+                            if (callbacks.onRequest) |onrequest| {
+                                onrequest(parser, client);
+                            }
+                        },
+
                         else => {}
                     }
                 }

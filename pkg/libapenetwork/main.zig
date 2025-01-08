@@ -69,7 +69,7 @@ pub const Client = struct {
 const ServerCallbacks = struct {
     onConnect: ?fn (*Server, Client) void = null,
     onDisconnect: ?fn (*Server, Client) void = null,
-    onData: ?fn (*Server, Client, []const u8) void = null
+    onData: ?fn (*Server, Client, []const u8) anyerror!void = null
 };
 
 pub const Server = struct {
@@ -122,7 +122,7 @@ pub const Server = struct {
                 const client = Client{.socket = _client};
 
                 if (callbacks.onData) |ondata| {
-                    @call(.always_inline, ondata, .{ ctx, client, data[0..len] });
+                    @call(.always_inline, ondata, .{ ctx, client, data[0..len] }) catch return;
                 }
             }
         }.callback;
