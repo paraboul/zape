@@ -55,7 +55,7 @@ pub const Client = struct {
         switch (builtin.os.tag) {
             .linux => {
                 const state : u8 = 1;
-                std.posix.setsockopt(self.socket.*.s.fd, std.posix.IPPROTO.TCP, std.posix.TCP.CORK, &state);
+                std.posix.setsockopt(self.socket.*.s.fd, std.posix.IPPROTO.TCP, std.posix.TCP.CORK, &std.mem.toBytes(@as(c_int, state))) catch return;
             },
             else => {}
         }
@@ -65,7 +65,7 @@ pub const Client = struct {
         switch (builtin.os.tag) {
             .linux => {
                 const state : u8 = 0;
-                std.posix.setsockopt(self.socket.*.s.fd, std.posix.IPPROTO.TCP, std.posix.TCP.CORK, &state);
+                std.posix.setsockopt(self.socket.*.s.fd, std.posix.IPPROTO.TCP, std.posix.TCP.CORK, &std.mem.toBytes(@as(c_int, state))) catch return;
             },
             else => {}
         }
