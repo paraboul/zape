@@ -23,7 +23,7 @@
 #define CARES_TYPEOF_ARES_SSIZE_T ssize_t
 
 /* Use resolver library to configure cares */
-#define CARES_USE_LIBRESOLV 1
+/* #undef CARES_USE_LIBRESOLV */
 
 /* if a /etc/inet dir is being used */
 /* #undef ETC_INET */
@@ -47,10 +47,10 @@
 #define GETNAMEINFO_TYPE_ARG7 int
 
 /* Specifies the number of arguments to getservbyport_r */
-/* #undef GETSERVBYPORT_R_ARGS */
+#define GETSERVBYPORT_R_ARGS 6
 
 /* Specifies the size of the buffer to pass to getservbyport_r */
-/* #undef GETSERVBYPORT_R_BUFSIZE */
+#define GETSERVBYPORT_R_BUFSIZE 4096
 
 /* Define to 1 if you have AF_INET6. */
 #define HAVE_AF_INET6 1
@@ -74,7 +74,7 @@
 #define HAVE_BOOL_T 1
 
 /* Define to 1 if you have the clock_gettime function and monotonic timer. */
-/* #undef HAVE_CLOCK_GETTIME_MONOTONIC */
+#define HAVE_CLOCK_GETTIME_MONOTONIC 1
 
 /* Define to 1 if you have the closesocket function. */
 /* #undef HAVE_CLOSESOCKET */
@@ -128,7 +128,7 @@
 #define HAVE_GETNAMEINFO 1
 
 /* Define to 1 if you have the getservbyport_r function. */
-/* #undef HAVE_GETSERVBYPORT_R */
+#define HAVE_GETSERVBYPORT_R 1
 
 /* Define to 1 if you have the `gettimeofday' function. */
 #define HAVE_GETTIMEOFDAY 1
@@ -137,7 +137,7 @@
 #define HAVE_IF_INDEXTONAME 1
 
 /* Define to 1 if you have a IPv6 capable working inet_net_pton function. */
-#define HAVE_INET_NET_PTON 1
+/* #undef HAVE_INET_NET_PTON */
 
 /* Define to 1 if you have a IPv6 capable working inet_ntop function. */
 #define HAVE_INET_NTOP 1
@@ -183,7 +183,7 @@
 #define HAVE_LONGLONG 1
 
 /* Define to 1 if you have the malloc.h header file. */
-/* #undef HAVE_MALLOC_H */
+#define HAVE_MALLOC_H 1
 
 /* Define to 1 if you have the memory.h header file. */
 #define HAVE_MEMORY_H 1
@@ -357,7 +357,7 @@
 /* #undef NEED_THREAD_SAFE */
 
 /* cpu-machine-OS */
-#define OS "arm-apple-darwin24.1.0"
+#define OS "x86_64-pc-linux-gnu"
 
 /* Name of package */
 #define PACKAGE "c-ares"
@@ -381,7 +381,7 @@
 #define PACKAGE_VERSION "1.17.2"
 
 /* Define to the type qualifier pointed by arg 5 for recvfrom. */
-#define RECVFROM_QUAL_ARG5
+#define RECVFROM_QUAL_ARG5 
 
 /* Define to the type of arg 1 for recvfrom. */
 #define RECVFROM_TYPE_ARG1 int

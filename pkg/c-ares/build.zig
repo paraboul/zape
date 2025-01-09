@@ -14,7 +14,13 @@ pub fn build(b: *std.Build) void {
     });
 
     lib.defineCMacro("HAVE_CONFIG_H", "1");
-    lib.addIncludePath(b.path("vendor/include"));
+
+    switch(target.result.os.tag) {
+        .linux => lib.addIncludePath(b.path("vendor/include/linux")),
+        .macos => lib.addIncludePath(b.path("vendor/include/macos")),
+        else => {}
+    }
+
     lib.addIncludePath(upstream.path("include"));
 
     // lib.addConfigHeader(b.addConfigHeader(.{
