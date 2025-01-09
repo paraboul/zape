@@ -25,7 +25,7 @@ pub fn HttpServerConfig(comptime T: type) type {
         onDisconnect: ?fn () void = null,
         onRequest: ?fn (* const HttpParserState, apenetwork.Client) void = null,
         onWebSocketRequest: ?fn (* const HttpParserState, apenetwork.Client) WebSocketUserContextReturn(T) = null,
-        onWebSocketFrame: ?fn (* const HttpParserState, [] const u8, *T) void = null,
+        onWebSocketFrame: ?fn (* const HttpParserState, apenetwork.WebSocketClient, [] const u8, *T) void = null,
     };
 }
 
@@ -289,7 +289,8 @@ pub const HttpServer = struct {
                                     fn onframe(frame_state: * const HttpParserState, frame_data: [] const u8, ctx: *anyopaque) void {
 
                                         if (httpconfig.onWebSocketFrame) |onwebsocketframe| {
-                                            onwebsocketframe(frame_state, frame_data, @alignCast(@ptrCast(ctx)));
+                                            // bench with inline
+                                            onwebsocketframe(frame_state, apenetwork.WebSocketClient{ .state = frame_state.websocket_state.? }, frame_data, @alignCast(@ptrCast(ctx)));
                                         }
                                     }
                                 }.onframe)) {
