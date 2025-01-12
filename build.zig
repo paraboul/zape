@@ -5,6 +5,12 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const zape_module = b.addModule("zape", .{
+        .root_source_file = b.path("src/zape.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     const bin = b.addExecutable(.{
         .name = "netserver",
         .root_source_file = b.path("src/main.zig"),
@@ -24,12 +30,26 @@ pub fn build(b: *std.Build) void {
     bin.linkSystemLibrary("resolv");
     bin.linkLibC();
 
+    zape_module.linkLibrary(apenetwork);
+    zape_module.linkLibrary(llhttp);
+
     bin.root_module.addImport(
         "libapenetwork",
         libapenetwork.module("libapenetwork"),
     );
 
     bin.root_module.addImport(
+        "llhttp",
+        libllhttp.module("llhttp"),
+    );
+
+
+    zape_module.addImport(
+        "libapenetwork",
+        libapenetwork.module("libapenetwork"),
+    );
+
+    zape_module.addImport(
         "llhttp",
         libllhttp.module("llhttp"),
     );
