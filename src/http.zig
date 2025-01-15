@@ -275,7 +275,13 @@ pub const HttpServer = struct {
                         },
 
                         .websocket_upgrade => {
-                            parser.user_ctx = try parser.arena.allocator().create(httpconfig.ctxType);
+
+                            parser.user_ctx = blk: {
+                                const ctx = try parser.arena.allocator().create(httpconfig.ctxType);
+                                ctx.* = httpconfig.ctxType{};
+                                break :blk ctx;
+                            };
+
                             if (httpconfig.onWebSocketRequest) |onwebsocketrequest| {
 
                                 const result = onwebsocketrequest(parser, client, @alignCast(@ptrCast(parser.user_ctx.?)));
@@ -295,7 +301,11 @@ pub const HttpServer = struct {
                         },
 
                         .done => {
-                            parser.user_ctx = try parser.arena.allocator().create(httpconfig.ctxType);
+                            parser.user_ctx = blk: {
+                                const ctx = try parser.arena.allocator().create(httpconfig.ctxType);
+                                ctx.* = httpconfig.ctxType{};
+                                break :blk ctx;
+                            };
 
                             if (httpconfig.onRequest) |onrequest| {
                                 onrequest(parser, client, @alignCast(@ptrCast(parser.user_ctx.?)));
