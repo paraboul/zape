@@ -20,31 +20,26 @@ pub fn main() !void {
         .port = 80,
 
         .onRequest = struct {
-            fn onrequest(request: * const http.HttpParserState, _: apenetwork.Client) void {
+            fn onrequest(request: * const http.HttpParserState, _: apenetwork.Client, _: *UserCtx) void {
                 std.debug.print("Got a request {s}\n", .{request.getURL().?});
             }
         }.onrequest,
 
         .onWebSocketRequest = struct {
-            fn onWebSocketRequest(request: * const http.HttpParserState, _: apenetwork.Client) http.WebSocketUserContextReturn(UserCtx) {
+            fn onwebsocketrequest(request: * const http.HttpParserState, _: apenetwork.Client, _: *UserCtx) bool {
                 std.debug.print("Got websocket request {s}\n", .{request.getURL().?});
 
-                return .{
-                    .accept = true,
-                    .ctx = .{
-                        .foo = 50
-                    }
-                };
+                return true;
             }
-        }.onWebSocketRequest,
+        }.onwebsocketrequest,
 
         .onWebSocketFrame = struct {
-            fn onWebSocketFrame(request: * const http.HttpParserState, client: apenetwork.WebSocketClient, message: [] const u8, ctx: *UserCtx) void {
+            fn onwebsocketframe(request: * const http.HttpParserState, client: apenetwork.WebSocketClient, message: [] const u8, ctx: *UserCtx) void {
                 std.debug.print("WS({d}) FRAME on {s} -> {s}\n", .{ctx.foo, request.getURL().?, message});
 
                 client.write(message, .copy);
             }
-        }.onWebSocketFrame
+        }.onwebsocketframe
 
     });
 

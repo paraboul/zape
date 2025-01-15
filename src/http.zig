@@ -9,22 +9,16 @@ const ParseReturnState = union(enum) {
     parse_error: llhttp.c.llhttp_errno_t
 };
 
-
-pub fn WebSocketUserContextReturn(comptime T: type) type {
-    return struct {
-        accept: bool,
-        ctx: T
-    };
-}
-
 pub fn HttpServerConfig(comptime T: type) type {
+
     return struct {
+        ctxType: type = T,
         port: u16 = 80,
 
         onConnect: ?fn () void = null,
-        onDisconnect: ?fn () void = null,
-        onRequest: ?fn (* const HttpParserState, apenetwork.Client) void = null,
-        onWebSocketRequest: ?fn (* const HttpParserState, apenetwork.Client) WebSocketUserContextReturn(T) = null,
+        onDisconnect: ?fn (* const HttpParserState, apenetwork.Client, ?*T) void = null,
+        onRequest: ?fn (* const HttpParserState, apenetwork.Client, *T) void = null,
+        onWebSocketRequest: ?fn (* const HttpParserState, apenetwork.Client, *T) bool = null,
         onWebSocketFrame: ?fn (* const HttpParserState, apenetwork.WebSocketClient, [] const u8, *T) void = null,
     };
 }
@@ -143,7 +137,7 @@ pub const HttpParserState = struct {
     } = .{},
 
     websocket_state: ?*apenetwork.c.websocket_state = null,
-    websocket_user_ctx: ?*anyopaque = null,
+    user_ctx: ?*anyopaque = null,
 
     pub fn init(allocator: std.mem.Allocator) HttpParserState {
 
@@ -172,7 +166,7 @@ pub const HttpParserState = struct {
         }
     }
 
-    pub fn acceptWebSocket(self: *HttpParserState, client: apenetwork.Client, user_ctx: *anyopaque, on_frame_cb: fn (* const HttpParserState, [] const u8, user_ctx: *anyopaque) void) bool {
+    pub fn acceptWebSocket(self: *HttpParserState, client: apenetwork.Client, on_frame_cb: fn (* const HttpParserState, [] const u8, user_ctx: *anyopaque) void) bool {
         if (self.headers.get("sec-websocket-key")) |wskey| {
 
             var digest :[20]u8 = undefined;
@@ -188,8 +182,6 @@ pub const HttpParserState = struct {
             client.write("\r\nSec-WebSocket-Origin: 127.0.0.1\r\n\r\n", .static);
             client.tcpBufferEnd();
 
-            self.websocket_user_ctx = user_ctx;
-
             self.websocket_state = apenetwork.c.ape_ws_create(0, client.socket, struct {
                 fn on_frame(ws_state: ?*apenetwork.c.websocket_state, data: [*c]const u8, len: isize, _: c_int, _: c_uint) callconv(.C) void {
 
@@ -200,7 +192,7 @@ pub const HttpParserState = struct {
                     const message_length : u32 = @intCast(len);
                     const http_state : *HttpParserState = @ptrCast(@alignCast(apenetwork.c.ape_ws_get_socket(ws_state).?.*.ctx orelse return));
 
-                    @call(.always_inline, on_frame_cb, .{http_state, data[0..message_length], http_state.websocket_user_ctx.?});
+                    @call(.always_inline, on_frame_cb, .{http_state, data[0..message_length], http_state.user_ctx.?});
                 }
             }.on_frame);
 
@@ -244,6 +236,7 @@ pub const HttpServer = struct {
                         break :parser parser;
                     };
 
+                    // TODO: callback?
                     client_connected(server, client);
                 }
             }.connect,
@@ -252,6 +245,10 @@ pub const HttpServer = struct {
                 fn disconnect(server: *apenetwork.Server, client: apenetwork.Client) void {
                     const httpserver : *HttpServer = @fieldParentPtr("server", server);
                     var parser : *HttpParserState = @ptrCast(@alignCast(client.socket.*.ctx orelse return));
+
+                    if (httpconfig.onDisconnect) |ondisconnect| {
+                        ondisconnect(parser, client, @alignCast(@ptrCast(parser.user_ctx)));
+                    }
 
                     parser.deinit();
                     httpserver.allocator.destroy(parser);
@@ -278,14 +275,12 @@ pub const HttpServer = struct {
                         },
 
                         .websocket_upgrade => {
-
+                            parser.user_ctx = try parser.arena.allocator().create(httpconfig.ctxType);
                             if (httpconfig.onWebSocketRequest) |onwebsocketrequest| {
 
-                                const result = onwebsocketrequest(parser, client);
-                                const user_ctx = try parser.arena.allocator().create(@TypeOf(result.ctx));
-                                user_ctx.* = result.ctx;
+                                const result = onwebsocketrequest(parser, client, @alignCast(@ptrCast(parser.user_ctx.?)));
 
-                                if (!result.accept or !parser.acceptWebSocket(client, user_ctx, struct {
+                                if (!result or !parser.acceptWebSocket(client, struct {
                                     fn onframe(frame_state: * const HttpParserState, frame_data: [] const u8, ctx: *anyopaque) void {
 
                                         if (httpconfig.onWebSocketFrame) |onwebsocketframe| {
@@ -300,8 +295,10 @@ pub const HttpServer = struct {
                         },
 
                         .done => {
+                            parser.user_ctx = try parser.arena.allocator().create(httpconfig.ctxType);
+
                             if (httpconfig.onRequest) |onrequest| {
-                                onrequest(parser, client);
+                                onrequest(parser, client, @alignCast(@ptrCast(parser.user_ctx.?)));
                             }
                         },
 
