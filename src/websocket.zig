@@ -2,6 +2,8 @@ const std = @import("std");
 const apenetwork = @import("libapenetwork");
 
 
+const maximum_preallocated_bytes_per_frame = 1024*1024;
+
 pub const WebSocketConnectionType = enum {
     client,
     server
@@ -76,7 +78,17 @@ pub const WebSocketState = struct {
         for (data) |byte| {
             switch (self.step) {
                 .step_key => {
+                    self.cipher.key[self.cipher.pos] = byte;
 
+                    if (self.cipher.pos == 3) {
+
+                        // TODO: no length ? end message
+                        self.step = .step_data;
+
+                        continue;
+                    }
+
+                    self.cipher.pos += 1;
                 },
 
                 .step_start => {
@@ -131,7 +143,15 @@ pub const WebSocketState = struct {
                 },
 
                 .step_data => {
+                    const decoded_byte : u8 = byte ^ self.cipher.key[self.data_inkey];
 
+                    if (self.buffer.capacity == 0) {
+                        self.buffer.ensureUnusedCapacity(@min(self.frame.length, maximum_preallocated_bytes_per_frame)) catch @panic("OOM");
+                    }
+
+                    self.buffer.append(decoded_byte) catch @panic("OOM");
+
+                    self.data_inkey +%= 1;
                 },
 
                 else => {
