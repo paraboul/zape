@@ -24,13 +24,15 @@ const FrameState = enum {
 };
 
 pub const WebSocketState = struct {
+    allocator: std.mem.Allocator,
+
     buffer: std.ArrayList(u8),
-    frame_pos: u64 = 0,
 
     frame: struct {
         length: u64 = 0,
         header: u8 = 0,
-        prevheader: u8 = 0
+        prevheader: u8 = 0,
+        length_pos: u3 = 0
     } = .{},
 
     cipher: struct {
@@ -48,18 +50,31 @@ pub const WebSocketState = struct {
     pub fn init(allocator: std.mem.Allocator, connection_type: WebSocketConnectionType) WebSocketState {
         return WebSocketState {
             .buffer = std.ArrayList(u8).init(allocator),
-            .connection_type = connection_type
+            .connection_type = connection_type,
+            .allocator = allocator
         };
+    }
+
+    pub fn Create(allocator: std.mem.Allocator, connection_type: WebSocketConnectionType) !*WebSocketState {
+        const ret = try allocator.create(WebSocketState);
+        ret.* = WebSocketState.init(allocator, connection_type);
+
+        return ret;
+    }
+
+    pub fn destroy(self: *WebSocketState) void {
+        self.deinit();
+        self.allocator.destroy(self);
     }
 
     pub fn deinit(self: *WebSocketState) void {
         self.buffer.deinit();
     }
 
-
     pub fn process_data(self: *WebSocketState, data: []const u8) !void {
+
         for (data) |byte| {
-            switch(self.step) {
+            switch (self.step) {
                 .step_key => {
 
                 },
@@ -72,9 +87,9 @@ pub const WebSocketState = struct {
                 .step_length => {
                     self.masking = (byte & 0x80) != 0;
 
-                    switch(byte & 0x7f) {
-                        127 => self.step = .step_short_length,
-                        128 => self.step = .step_extended_length,
+                    switch (byte & 0x7f) {
+                        126 => self.step = .step_short_length,
+                        127 => self.step = .step_extended_length,
                         else => {
                             self.frame.length = byte & 0x7f;
                             self.step = if (self.masking) .step_key else .step_data;
@@ -86,12 +101,33 @@ pub const WebSocketState = struct {
                     }
                 },
 
-                .step_short_length => {
+                .step_short_length, .step_extended_length => {
+                    self.frame.length |= @as(u64, @intCast(byte)) << @as(u6, @intCast(self.frame.length_pos * @as(u6, 8)));
+                    var done_reading_length = false;
 
-                },
+                    switch (self.step) {
+                        .step_short_length => {
+                            if (self.frame.length_pos == 1) {
+                                self.frame.length = @byteSwap(@as(u16, @intCast(self.frame.length)));
 
-                .step_extended_length => {
+                                done_reading_length = true;
+                            }
+                        },
+                        .step_extended_length => {
+                            if (self.frame.length_pos == 7) {
+                                self.frame.length = @byteSwap(@as(u64, @intCast(self.frame.length)));
 
+                                done_reading_length = true;
+                            }
+                        },
+                        else => unreachable
+                    }
+
+                    if (done_reading_length) {
+                        self.step = if (self.masking) .step_key else .step_data;
+                    } else {
+                        self.frame.length_pos += 1;
+                    }
                 },
 
                 .step_data => {
@@ -103,11 +139,11 @@ pub const WebSocketState = struct {
                 }
             }
         }
-    },
+    }
 
     fn end_message(self: *WebSocketState) !void {
         const opcode : u8 = self.frame.header & 0x7f;
-        var is_binary = opcode == 0x2 or (opcode == 0x0 and (self.prevheader & 0x0F) == 0x2);
+        // var is_binary = opcode == 0x2 or (opcode == 0x0 and (self.prevheader & 0x0F) == 0x2);
 
         switch (opcode) {
 
