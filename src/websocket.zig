@@ -15,196 +15,218 @@ const ParsingState = enum {
     step_length,
     step_short_length,
     step_extended_length,
-    step_data,
-    step_end
+    step_data
 };
 
-const FrameState = enum {
+pub const FrameState = enum {
     frame_start,
     frame_continue,
     frame_finish
 };
 
-pub const WebSocketState = struct {
-    allocator: std.mem.Allocator,
+pub const WebSocketCallbacks = struct {
+    on_message: ?* const fn(data: [] const u8, is_binary: bool, frame: FrameState) void = null
+};
 
-    buffer: std.ArrayList(u8),
+pub fn WebSocketState(T: type) type {
+    return struct {
+        const Self = @This();
 
-    frame: struct {
-        length: u64 = 0,
-        header: u8 = 0,
-        prevheader: u8 = 0,
-        length_pos: u3 = 0
-    } = .{},
+        allocator: std.mem.Allocator,
+        buffer: std.ArrayList(u8),
 
-    cipher: struct {
-        key: [4]u8 = .{0, 0, 0, 0},
-        pos: u2 = 0
-    } = .{},
+        context: ?*T,
 
-    data_inkey: u2 = 0, // Increment with data_inkey +%= 1
-    masking: bool = false,
-    close_sent: bool = false,
+        frame: struct {
+            length: u64 = 0,
+            header: u8 = 0,
+            prevheader: u8 = 0,
+            length_pos: u3 = 0
+        } = .{},
 
-    step: ParsingState = .step_start,
-    connection_type: WebSocketConnectionType,
+        cipher: struct {
+            key: [4]u8 = .{0, 0, 0, 0},
+            pos: u2 = 0
+        } = .{},
 
-    pub fn init(allocator: std.mem.Allocator, connection_type: WebSocketConnectionType) WebSocketState {
-        return WebSocketState {
-            .buffer = std.ArrayList(u8).init(allocator),
-            .connection_type = connection_type,
-            .allocator = allocator
-        };
-    }
+        data_inkey: u2 = 0, // Increment with data_inkey +%= 1
+        masking: bool = false,
+        close_sent: bool = false,
 
-    pub fn Create(allocator: std.mem.Allocator, connection_type: WebSocketConnectionType) !*WebSocketState {
-        const ret = try allocator.create(WebSocketState);
-        ret.* = WebSocketState.init(allocator, connection_type);
+        step: ParsingState = .step_start,
+        connection_type: WebSocketConnectionType,
 
-        return ret;
-    }
+        callbacks: WebSocketCallbacks,
 
-    pub fn destroy(self: *WebSocketState) void {
-        self.deinit();
-        self.allocator.destroy(self);
-    }
+        pub fn init(allocator: std.mem.Allocator, connection_type: WebSocketConnectionType, callbacks: WebSocketCallbacks) Self {
+            return Self {
+                .buffer = std.ArrayList(u8).init(allocator),
+                .connection_type = connection_type,
+                .allocator = allocator,
+                .callbacks = callbacks,
+                .context = null
+            };
+        }
 
-    pub fn deinit(self: *WebSocketState) void {
-        self.buffer.deinit();
-    }
+        pub fn deinit(self: *Self) void {
+            self.buffer.deinit();
+        }
 
-    pub fn process_data(self: *WebSocketState, data: []const u8) !void {
+        pub fn process_data(self: *Self, data: []const u8) !void {
 
-        for (data) |byte| {
-            switch (self.step) {
-                .step_key => {
-                    self.cipher.key[self.cipher.pos] = byte;
+            std.debug.print("[Process] {d}\n", .{data.len});
 
-                    if (self.cipher.pos == 3) {
+            for (data) |byte| {
+                switch (self.step) {
+                    .step_key => {
+                        self.cipher.key[self.cipher.pos] = byte;
 
-                        // TODO: no length ? end message
-                        self.step = .step_data;
+                        if (self.cipher.pos == 3) {
 
-                        continue;
-                    }
+                            // TODO: no length ? end message
+                            self.step = .step_data;
 
-                    self.cipher.pos += 1;
-                },
-
-                .step_start => {
-                    self.frame.header = byte;
-                    self.step = .step_length;
-                },
-
-                .step_length => {
-                    self.masking = (byte & 0x80) != 0;
-
-                    switch (byte & 0x7f) {
-                        126 => self.step = .step_short_length,
-                        127 => self.step = .step_extended_length,
-                        else => {
-                            self.frame.length = byte & 0x7f;
-                            self.step = if (self.masking) .step_key else .step_data;
+                            continue;
                         }
-                    }
 
-                    if (!self.masking and self.frame.length == 0) {
-                        // end message;
-                    }
-                },
+                        self.cipher.pos += 1;
+                    },
 
-                .step_short_length, .step_extended_length => {
-                    self.frame.length |= @as(u64, @intCast(byte)) << @as(u6, @intCast(self.frame.length_pos * @as(u6, 8)));
-                    var done_reading_length = false;
+                    .step_start => {
+                        self.frame.header = byte;
+                        self.step = .step_length;
+                        self.data_inkey = 0;
+                        self.cipher.pos = 0;
+                        self.frame.length_pos = 0;
+                        try self.buffer.resize(0);
+                    },
 
-                    switch (self.step) {
-                        .step_short_length => {
-                            if (self.frame.length_pos == 1) {
-                                self.frame.length = @byteSwap(@as(u16, @intCast(self.frame.length)));
+                    .step_length => {
+                        self.masking = (byte & 0x80) != 0;
 
-                                done_reading_length = true;
+                        switch (byte & 0x7f) {
+                            126 => self.step = .step_short_length,
+                            127 => self.step = .step_extended_length,
+                            else => {
+                                self.frame.length = byte & 0x7f;
+                                self.step = if (self.masking) .step_key else .step_data;
                             }
-                        },
-                        .step_extended_length => {
-                            if (self.frame.length_pos == 7) {
-                                self.frame.length = @byteSwap(@as(u64, @intCast(self.frame.length)));
+                        }
 
-                                done_reading_length = true;
-                            }
-                        },
-                        else => unreachable
+                        if (!self.masking and self.frame.length == 0) {
+                        try self.end_message();
+                        continue;
+                        }
+                    },
+
+                    .step_short_length, .step_extended_length => {
+                        self.frame.length |= @as(u64, @intCast(byte)) << @as(u6, @intCast(self.frame.length_pos * @as(u6, 8)));
+                        var done_reading_length = false;
+
+                        switch (self.step) {
+                            .step_short_length => {
+                                if (self.frame.length_pos == 1) {
+                                    self.frame.length = @byteSwap(@as(u16, @intCast(self.frame.length)));
+
+                                    done_reading_length = true;
+                                }
+                            },
+                            .step_extended_length => {
+                                if (self.frame.length_pos == 7) {
+                                    self.frame.length = @byteSwap(@as(u64, @intCast(self.frame.length)));
+
+                                    done_reading_length = true;
+                                }
+                            },
+                            else => unreachable
+                        }
+
+                        if (done_reading_length) {
+                            self.step = if (self.masking) .step_key else .step_data;
+                        } else {
+                            self.frame.length_pos += 1;
+                        }
+                    },
+
+                    .step_data => {
+                        const decoded_byte : u8 = byte ^ self.cipher.key[self.data_inkey];
+
+                        if (self.buffer.capacity == 0) {
+                            self.buffer.ensureTotalCapacity(@min(self.frame.length, maximum_preallocated_bytes_per_frame)) catch @panic("OOM");
+                        }
+
+                        self.buffer.append(decoded_byte) catch @panic("OOM");
+
+                        if (self.buffer.items.len == self.frame.length) {
+                            try self.end_message();
+                            continue;
+                        }
+
+                        self.data_inkey +%= 1;
                     }
-
-                    if (done_reading_length) {
-                        self.step = if (self.masking) .step_key else .step_data;
-                    } else {
-                        self.frame.length_pos += 1;
-                    }
-                },
-
-                .step_data => {
-                    const decoded_byte : u8 = byte ^ self.cipher.key[self.data_inkey];
-
-                    if (self.buffer.capacity == 0) {
-                        self.buffer.ensureUnusedCapacity(@min(self.frame.length, maximum_preallocated_bytes_per_frame)) catch @panic("OOM");
-                    }
-
-                    self.buffer.append(decoded_byte) catch @panic("OOM");
-
-                    self.data_inkey +%= 1;
-                },
-
-                else => {
-
                 }
             }
         }
-    }
 
-    fn end_message(self: *WebSocketState) !void {
-        const opcode : u8 = self.frame.header & 0x7f;
-        // var is_binary = opcode == 0x2 or (opcode == 0x0 and (self.prevheader & 0x0F) == 0x2);
-
-        switch (opcode) {
-
-            // 0x0 = Continuation frame
-            // 0x1 = ASCII frame
-            // 0x2 = binary frame
-            0x0, 0x1, 0x2 => {
-                // bool isfin = (self.frame.header & 0xF0) == 0x80;
-
-                // if (isfin) {
-                //     fs = WS_FRAME_FINISH;
-                // } else if (opcode == 0) {
-                //     fs = WS_FRAME_CONTINUE;
-                // } else {
-                //     fs = WS_FRAME_START;
-                // }
-
-                // websocket->on_frame(websocket, websocket->data,
-                //                     websocket->data_inkey, isBinary, fs);
-            },
-
-            // Close frame
-            0x8 => {
-
-            },
-
-            // Ping frame
-            0x9 => {
-
-            },
-
-            // Pong frame
-            0xA => {
-
-            },
-
-            // Unknown value
-            else => {
-
-            }
+        fn reset_state(self: *Self) void {
+            self.step = .step_start;
         }
-    }
 
-};
+        fn end_message(self: *Self) !void {
+            const opcode : u8 = self.frame.header & 0x7f;
+            const is_binary = opcode == 0x2 or (opcode == 0x0 and (self.frame.prevheader & 0x0F) == 0x2);
+
+            switch (opcode) {
+
+                // 0x0 = Continuation frame
+                // 0x1 = ASCII frame
+                // 0x2 = binary frame
+                0x0, 0x1, 0x2 => {
+                    const is_fin = (self.frame.header & 0xF0) == 0x80;
+
+                    const frame_state : FrameState = state: {
+                        if (is_fin) {
+                            break :state .frame_finish;
+                        } else if (opcode == 0) {
+                            break :state .frame_continue;
+                        } else {
+                            break :state .frame_start;
+                        }
+                    };
+
+                    if (self.callbacks.on_message) |on_message| {
+                        on_message(self.buffer.items, is_binary, frame_state);
+                    }
+                },
+
+                // Close frame
+                0x8 => {
+                    const reason : u16 = brk: {
+                        if (self.buffer.items.len < 2) break :brk 0;
+                        break :brk self.buffer.items[1] | @as(u16, @intCast(self.buffer.items[0])) << 8;
+                    };
+                    std.debug.print("[Close frame] {d}\n", .{reason});
+                },
+
+                // Ping frame
+                0x9 => {
+                    std.debug.print("[Ping frame]\n", .{});
+                },
+
+                // Pong frame
+                0xA => {
+                    std.debug.print("[Pong frame]\n", .{});
+                },
+
+                // Unknown value
+                else => {
+                    std.debug.print("[Unknown frame]\n", .{});
+                }
+            }
+
+            self.reset_state();
+        }
+
+    };
+
+}
