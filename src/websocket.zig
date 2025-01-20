@@ -24,18 +24,52 @@ pub const FrameState = enum {
     frame_finish
 };
 
-pub const WebSocketCallbacks = struct {
-    on_message: ?* const fn(data: [] const u8, is_binary: bool, frame: FrameState) void = null
+pub const WriteAction = struct {
+    data: [] const u8,
+    lifetime: apenetwork.DataLifetime
 };
 
-pub fn WebSocketState(T: type) type {
+pub const ShutdownAction = apenetwork.ShutdownAction;
+
+pub const WebsocketAction = union(enum) {
+    write: WriteAction,
+    shutdown: ShutdownAction,
+};
+
+fn get_masking_key() u32 {
+
+    // This is how you define static in zig
+    // Make prng static so it's only initialized the first time it's called
+    const S = struct {
+        var prng: ?std.rand.DefaultPrng = null;
+    };
+
+    if (S.prng == null) {
+        S.prng = std.rand.DefaultPrng.init(blk: {
+            var seed: u64 = undefined;
+            std.posix.getrandom(std.mem.asBytes(&seed)) catch @panic("Failed to get rand value");
+            break :blk seed;
+        });
+    }
+
+    return S.prng.?.random().int(u32);
+}
+
+pub fn WebSocketCallbacks(T: type) type {
+    return struct {
+        on_message: ?* const fn(context: * const T, data: [] const u8, is_binary: bool, frame: FrameState) void = null,
+        on_action: ?* const fn(context: * const T, actions: [] const WebsocketAction) void = null
+    };
+}
+
+pub fn WebSocketState(T: type, comptime contype: WebSocketConnectionType) type {
     return struct {
         const Self = @This();
 
         allocator: std.mem.Allocator,
         buffer: std.ArrayList(u8),
 
-        context: ?*T,
+        context: *T,
 
         frame: struct {
             length: u64 = 0,
@@ -54,17 +88,16 @@ pub fn WebSocketState(T: type) type {
         close_sent: bool = false,
 
         step: ParsingState = .step_start,
-        connection_type: WebSocketConnectionType,
+        comptime connection_type: WebSocketConnectionType = contype,
 
-        callbacks: WebSocketCallbacks,
+        callbacks: WebSocketCallbacks(T),
 
-        pub fn init(allocator: std.mem.Allocator, connection_type: WebSocketConnectionType, callbacks: WebSocketCallbacks) Self {
+        pub fn init(allocator: std.mem.Allocator, context: *T, callbacks: WebSocketCallbacks(T)) Self {
             return Self {
                 .buffer = std.ArrayList(u8).init(allocator),
-                .connection_type = connection_type,
                 .allocator = allocator,
                 .callbacks = callbacks,
-                .context = null
+                .context = context
             };
         }
 
@@ -114,8 +147,8 @@ pub fn WebSocketState(T: type) type {
                         }
 
                         if (!self.masking and self.frame.length == 0) {
-                        try self.end_message();
-                        continue;
+                            try self.end_message();
+                            continue;
                         }
                     },
 
@@ -195,7 +228,7 @@ pub fn WebSocketState(T: type) type {
                     };
 
                     if (self.callbacks.on_message) |on_message| {
-                        on_message(self.buffer.items, is_binary, frame_state);
+                        on_message(self.context, self.buffer.items, is_binary, frame_state);
                     }
                 },
 
@@ -205,6 +238,9 @@ pub fn WebSocketState(T: type) type {
                         if (self.buffer.items.len < 2) break :brk 0;
                         break :brk self.buffer.items[1] | @as(u16, @intCast(self.buffer.items[0])) << 8;
                     };
+
+                    self.send_control_frame(0x8);
+
                     std.debug.print("[Close frame] {d}\n", .{reason});
                 },
 
@@ -225,6 +261,43 @@ pub fn WebSocketState(T: type) type {
             }
 
             self.reset_state();
+        }
+
+        pub fn send_control_frame(self: *Self, comptime opcode: u8) void {
+            if (self.close_sent) {
+                return;
+            }
+
+            if (self.callbacks.on_action == null) {
+                return;
+            }
+
+            // This value is comptime know because self.connection_type is set at comptime
+            const payload_head = [2]u8{ 0x80 | opcode, if (self.connection_type == .client) 0x80 else 0x00};
+
+            const write_head = .{
+                WebsocketAction{.write = .{
+                    .data = payload_head[0..2],
+                    .lifetime = .static // TODO: is payload_head stored as static or in the stack?
+                }}
+            };
+
+            const actions = blk: {
+                // Append masking key
+                if (self.connection_type == .client) {
+
+                    const key = get_masking_key();
+
+                    break :blk write_head ++ .{
+                        WebsocketAction{.write = .{
+                            .data = std.mem.asBytes(&key),
+                            .lifetime = .copy
+                        }}
+                    };
+                } else break :blk write_head;
+            };
+
+            self.callbacks.on_action.?(self.context, &actions);
         }
 
     };
