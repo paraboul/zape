@@ -24,17 +24,6 @@ pub const FrameState = enum {
     frame_finish
 };
 
-pub const WriteAction = struct {
-    data: [] const u8,
-    lifetime: apenetwork.DataLifetime
-};
-
-pub const ShutdownAction = apenetwork.ShutdownAction;
-
-pub const WebsocketAction = union(enum) {
-    write: WriteAction,
-    shutdown: ShutdownAction,
-};
 
 fn get_masking_key() u32 {
 
@@ -57,8 +46,7 @@ fn get_masking_key() u32 {
 
 pub fn WebSocketCallbacks(T: type, comptime contype: WebSocketConnectionType) type {
     return struct {
-        on_message: ?* const fn(client: WebSocketClient(contype), context: * const T, data: [] const u8, is_binary: bool, frame: FrameState) void = null,
-        on_action: ?* const fn(context: * const T, actions: [] const WebsocketAction) void = null
+        on_message: ?* const fn(client: WebSocketClient(contype), context: * const T, data: [] const u8, is_binary: bool, frame: FrameState) void = null
     };
 }
 
@@ -67,11 +55,14 @@ pub fn WebSocketClient(comptime contype: WebSocketConnectionType) type {
     return struct {
 
         const Self = @This();
-
         client: apenetwork.Client,
+        closed: bool = false,
         comptime connection_type: WebSocketConnectionType = contype,
 
         pub fn write(self: *const Self, data: []const u8, comptime binary: bool, lifetime: apenetwork.DataLifetime) void {
+            if (self.closed) {
+                return;
+            }
 
             var payload_head = [_]u8{0} ** 32;
             payload_head[0] = 0x80 | if (binary) 0x02 else 0x01;
@@ -112,6 +103,26 @@ pub fn WebSocketClient(comptime contype: WebSocketConnectionType) type {
                 // TODO Masking
             }
             self.client.write(data, lifetime);
+        }
+
+        pub fn send_control_frame(self: *const Self, comptime opcode: u8) void {
+            if (self.closed) {
+                return;
+            }
+
+            const payload_head = [2]u8{ 0x80 | opcode, if (self.connection_type == .client) 0x80 else 0x00};
+
+            self.client.write(payload_head[0..2], .static);
+        }
+
+        pub fn close(self: *Self) void {
+            if (self.closed) {
+                return;
+            }
+
+            self.closed = true;
+            self.send_control_frame(0x8);
+            self.client.close(.queue);
         }
     };
 }
@@ -163,7 +174,6 @@ pub fn WebSocketState(T: type, comptime contype: WebSocketConnectionType) type {
         }
 
         pub fn process_data(self: *Self, data: []const u8) !void {
-
             for (data) |byte| {
                 switch (self.step) {
 
@@ -176,21 +186,6 @@ pub fn WebSocketState(T: type, comptime contype: WebSocketConnectionType) type {
                         self.frame.length = 0;
                         try self.buffer.resize(0);
                     },
-
-                    .step_key => {
-                        self.cipher.key[self.cipher.pos] = byte;
-
-                        if (self.cipher.pos == 3) {
-
-                            // TODO: no length ? end message
-                            self.step = .step_data;
-
-                            continue;
-                        }
-
-                        self.cipher.pos += 1;
-                    },
-
 
                     .step_length => {
                         self.masking = (byte & 0x80) != 0;
@@ -237,6 +232,24 @@ pub fn WebSocketState(T: type, comptime contype: WebSocketConnectionType) type {
                         } else {
                             self.frame.length_pos += 1;
                         }
+                    },
+
+                    .step_key => {
+                        self.cipher.key[self.cipher.pos] = byte;
+
+                        if (self.cipher.pos == 3) {
+
+                            // TODO: no length ? end message
+                            self.step = .step_data;
+
+                            if (self.frame.length == 0) {
+                                try self.end_message();
+                            }
+
+                            continue;
+                        }
+
+                        self.cipher.pos += 1;
                     },
 
                     .step_data => {
@@ -299,8 +312,7 @@ pub fn WebSocketState(T: type, comptime contype: WebSocketConnectionType) type {
                         break :brk self.buffer.items[1] | @as(u16, @intCast(self.buffer.items[0])) << 8;
                     };
 
-                    // self.send_control_frame(0x8);
-
+                    self.client.close();
                     std.debug.print("[Close frame] {d}\n", .{reason});
                 },
 
@@ -322,44 +334,6 @@ pub fn WebSocketState(T: type, comptime contype: WebSocketConnectionType) type {
 
             self.reset_state();
         }
-
-        pub fn send_control_frame(self: *Self, comptime opcode: u8) void {
-            if (self.close_sent) {
-                return;
-            }
-
-            if (self.callbacks.on_action == null) {
-                return;
-            }
-
-            // This value is comptime know because self.connection_type is set at comptime
-            const payload_head = [2]u8{ 0x80 | opcode, if (self.connection_type == .client) 0x80 else 0x00};
-
-            const write_head = .{
-                WebsocketAction{.write = .{
-                    .data = payload_head[0..2],
-                    .lifetime = .static // TODO: is payload_head stored as static or in the stack?
-                }}
-            };
-
-            const actions = blk: {
-                // Append masking key
-                if (self.connection_type == .client) {
-
-                    const key = get_masking_key();
-
-                    break :blk write_head ++ .{
-                        WebsocketAction{.write = .{
-                            .data = std.mem.asBytes(&key),
-                            .lifetime = .copy
-                        }}
-                    };
-                } else break :blk write_head;
-            };
-
-            self.callbacks.on_action.?(self.context, &actions);
-        }
-
     };
 
 }
