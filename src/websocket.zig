@@ -55,10 +55,64 @@ fn get_masking_key() u32 {
     return S.prng.?.random().int(u32);
 }
 
-pub fn WebSocketCallbacks(T: type) type {
+pub fn WebSocketCallbacks(T: type, comptime contype: WebSocketConnectionType) type {
     return struct {
-        on_message: ?* const fn(context: * const T, data: [] const u8, is_binary: bool, frame: FrameState) void = null,
+        on_message: ?* const fn(client: WebSocketClient(contype), context: * const T, data: [] const u8, is_binary: bool, frame: FrameState) void = null,
         on_action: ?* const fn(context: * const T, actions: [] const WebsocketAction) void = null
+    };
+}
+
+pub fn WebSocketClient(comptime contype: WebSocketConnectionType) type {
+
+    return struct {
+
+        const Self = @This();
+
+        client: apenetwork.Client,
+        comptime connection_type: WebSocketConnectionType = contype,
+
+        pub fn write(self: *const Self, data: []const u8, comptime binary: bool, lifetime: apenetwork.DataLifetime) void {
+
+            var payload_head = [_]u8{0} ** 32;
+            payload_head[0] = 0x80 | if (binary) 0x02 else 0x01;
+
+            // Masking flag
+            if (self.connection_type == .client) {
+                payload_head[1] = 0x80;
+            }
+
+            self.client.tcpBufferStart();
+            defer {
+                self.client.tcpBufferEnd();
+            }
+
+            if (data.len <= 125) {
+                const len : u7 = @truncate(data.len);
+
+                payload_head[1] |= len;
+
+                self.client.write(payload_head[0..2], lifetime);
+
+            } else if (data.len <= 65535) {
+                const len : u16 = @truncate(data.len);
+
+                payload_head[1] = 126;
+                std.mem.writeInt(u16, @ptrCast(&payload_head[2]), len, .big);
+
+                self.client.write(payload_head[0..4], lifetime);
+
+            } else if (data.len <= 0xFFFFFFFF) {
+                payload_head[1] = 127;
+                std.mem.writeInt(u64, @ptrCast(&payload_head[2]), data.len, .big);
+
+                self.client.write(payload_head[0..10], lifetime);
+            }
+
+            if (self.connection_type == .client) {
+                // TODO Masking
+            }
+            self.client.write(data, lifetime);
+        }
     };
 }
 
@@ -68,6 +122,8 @@ pub fn WebSocketState(T: type, comptime contype: WebSocketConnectionType) type {
 
         allocator: std.mem.Allocator,
         buffer: std.ArrayList(u8),
+
+        client: WebSocketClient(contype),
 
         context: *T,
 
@@ -90,14 +146,15 @@ pub fn WebSocketState(T: type, comptime contype: WebSocketConnectionType) type {
         step: ParsingState = .step_start,
         comptime connection_type: WebSocketConnectionType = contype,
 
-        callbacks: WebSocketCallbacks(T),
+        callbacks: WebSocketCallbacks(T, contype),
 
-        pub fn init(allocator: std.mem.Allocator, context: *T, callbacks: WebSocketCallbacks(T)) Self {
+        pub fn init(allocator: std.mem.Allocator, context: *T, client: apenetwork.Client, callbacks: WebSocketCallbacks(T, contype)) Self {
             return Self {
                 .buffer = std.ArrayList(u8).init(allocator),
                 .allocator = allocator,
                 .callbacks = callbacks,
-                .context = context
+                .context = context,
+                .client = WebSocketClient(contype){.client = client }
             };
         }
 
@@ -107,10 +164,19 @@ pub fn WebSocketState(T: type, comptime contype: WebSocketConnectionType) type {
 
         pub fn process_data(self: *Self, data: []const u8) !void {
 
-            std.debug.print("[Process] {d}\n", .{data.len});
-
             for (data) |byte| {
                 switch (self.step) {
+
+                    .step_start => {
+                        self.frame.header = byte;
+                        self.step = .step_length;
+                        self.data_inkey = 0;
+                        self.cipher.pos = 0;
+                        self.frame.length_pos = 0;
+                        self.frame.length = 0;
+                        try self.buffer.resize(0);
+                    },
+
                     .step_key => {
                         self.cipher.key[self.cipher.pos] = byte;
 
@@ -125,14 +191,6 @@ pub fn WebSocketState(T: type, comptime contype: WebSocketConnectionType) type {
                         self.cipher.pos += 1;
                     },
 
-                    .step_start => {
-                        self.frame.header = byte;
-                        self.step = .step_length;
-                        self.data_inkey = 0;
-                        self.cipher.pos = 0;
-                        self.frame.length_pos = 0;
-                        try self.buffer.resize(0);
-                    },
 
                     .step_length => {
                         self.masking = (byte & 0x80) != 0;
@@ -228,7 +286,9 @@ pub fn WebSocketState(T: type, comptime contype: WebSocketConnectionType) type {
                     };
 
                     if (self.callbacks.on_message) |on_message| {
-                        on_message(self.context, self.buffer.items, is_binary, frame_state);
+                        on_message(self.client, self.context, self.buffer.items, is_binary, frame_state);
+
+                        self.client.write(self.buffer.items, false, .copy);
                     }
                 },
 
@@ -239,7 +299,7 @@ pub fn WebSocketState(T: type, comptime contype: WebSocketConnectionType) type {
                         break :brk self.buffer.items[1] | @as(u16, @intCast(self.buffer.items[0])) << 8;
                     };
 
-                    self.send_control_frame(0x8);
+                    // self.send_control_frame(0x8);
 
                     std.debug.print("[Close frame] {d}\n", .{reason});
                 },
