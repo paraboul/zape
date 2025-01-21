@@ -25,18 +25,6 @@ pub fn callAsync(comptime callback: anytype, args: anytype) void {
     _ = c.APE_async(gape, wrapper.wrappedCallback, @constCast(args));
 }
 
-pub const WebSocketClient = struct {
-    const Self = @This();
-    state : *c.websocket_state,
-
-    pub fn write(self: *const Self, data: []const u8, lifetime: DataLifetime) void {
-        _ = c.ape_ws_write(self.state, @constCast(data.ptr), data.len, 0, switch (lifetime) {
-           .static => c.APE_DATA_STATIC,
-           .own => c.APE_DATA_OWN,
-           .copy => c.APE_DATA_COPY
-        });
-    }
-};
 
 pub const Client = struct {
     const Self = @This();

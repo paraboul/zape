@@ -24,6 +24,15 @@ pub const FrameState = enum {
     frame_finish
 };
 
+pub const OpCode = enum(u4) {
+    continuation = 0x0,
+    text = 0x1,
+    binary = 0x2,
+    close = 0x8,
+    ping = 0x9,
+    pong = 0xA,
+    _
+};
 
 fn get_masking_key() u32 {
 
@@ -59,13 +68,13 @@ pub fn WebSocketClient(comptime contype: WebSocketConnectionType) type {
         closed: bool = false,
         comptime connection_type: WebSocketConnectionType = contype,
 
-        pub fn write(self: *const Self, data: []const u8, comptime binary: bool, lifetime: apenetwork.DataLifetime) void {
+        pub fn write(self: *const Self, data: []const u8, comptime opcode: OpCode, lifetime: apenetwork.DataLifetime) void {
             if (self.closed) {
                 return;
             }
 
             var payload_head = [_]u8{0} ** 32;
-            payload_head[0] = 0x80 | if (binary) 0x02 else 0x01;
+            payload_head[0] = @as(u8, 0x80) | @intFromEnum(opcode);
 
             // Masking flag
             if (self.connection_type == .client) {
@@ -99,20 +108,12 @@ pub fn WebSocketClient(comptime contype: WebSocketConnectionType) type {
                 self.client.write(payload_head[0..10], lifetime);
             }
 
-            if (self.connection_type == .client) {
-                // TODO Masking
+            if (data.len != 0) {
+                if (self.connection_type == .client) {
+                    // TODO Masking
+                }
+                self.client.write(data, lifetime);
             }
-            self.client.write(data, lifetime);
-        }
-
-        pub fn send_control_frame(self: *const Self, comptime opcode: u8) void {
-            if (self.closed) {
-                return;
-            }
-
-            const payload_head = [2]u8{ 0x80 | opcode, if (self.connection_type == .client) 0x80 else 0x00};
-
-            self.client.write(payload_head[0..2], .static);
         }
 
         pub fn close(self: *Self) void {
@@ -121,8 +122,24 @@ pub fn WebSocketClient(comptime contype: WebSocketConnectionType) type {
             }
 
             self.closed = true;
-            self.send_control_frame(0x8);
+            self.write(&.{}, .close, .static);
             self.client.close(.queue);
+        }
+
+        pub fn ping(self: *const Self, data: [] const u8) void {
+            if (self.closed) {
+                return;
+            }
+
+            self.write(data, .ping, .copy);
+        }
+
+        pub fn pong(self: *const Self, data: [] const u8) void {
+            if (self.closed) {
+                return;
+            }
+
+            self.write(data, .pong, .copy);
         }
     };
 }
@@ -277,21 +294,21 @@ pub fn WebSocketState(T: type, comptime contype: WebSocketConnectionType) type {
         }
 
         fn end_message(self: *Self) !void {
-            const opcode : u8 = self.frame.header & 0x7f;
-            const is_binary = opcode == 0x2 or (opcode == 0x0 and (self.frame.prevheader & 0x0F) == 0x2);
+            const opcode : OpCode = @enumFromInt(self.frame.header & 0x0f);
+            const is_binary = opcode == .binary or (opcode == .continuation and (self.frame.prevheader & 0x0F) == 0x2);
 
             switch (opcode) {
 
                 // 0x0 = Continuation frame
                 // 0x1 = ASCII frame
                 // 0x2 = binary frame
-                0x0, 0x1, 0x2 => {
-                    const is_fin = (self.frame.header & 0xF0) == 0x80;
+                .continuation, .text, .binary => {
+                    const is_fin = (self.frame.header & 0xf0) == 0x80;
 
                     const frame_state : FrameState = state: {
                         if (is_fin) {
                             break :state .frame_finish;
-                        } else if (opcode == 0) {
+                        } else if (opcode == .continuation) {
                             break :state .frame_continue;
                         } else {
                             break :state .frame_start;
@@ -301,12 +318,14 @@ pub fn WebSocketState(T: type, comptime contype: WebSocketConnectionType) type {
                     if (self.callbacks.on_message) |on_message| {
                         on_message(self.client, self.context, self.buffer.items, is_binary, frame_state);
 
-                        self.client.write(self.buffer.items, false, .copy);
+                        self.client.write(self.buffer.items, .text, .copy);
+
+                        self.client.ping("Rahlo");
                     }
                 },
 
                 // Close frame
-                0x8 => {
+                .close => {
                     const reason : u16 = brk: {
                         if (self.buffer.items.len < 2) break :brk 0;
                         break :brk self.buffer.items[1] | @as(u16, @intCast(self.buffer.items[0])) << 8;
@@ -317,18 +336,19 @@ pub fn WebSocketState(T: type, comptime contype: WebSocketConnectionType) type {
                 },
 
                 // Ping frame
-                0x9 => {
+                .ping => {
                     std.debug.print("[Ping frame]\n", .{});
+                    // Send pong back with the same Application data
+                    self.client.pong(self.buffer.items);
                 },
 
                 // Pong frame
-                0xA => {
+                .pong => {
                     std.debug.print("[Pong frame]\n", .{});
                 },
 
-                // Unknown value
-                else => {
-                    std.debug.print("[Unknown frame]\n", .{});
+                _ => {
+                    std.debug.print("Unsupported opcode\n", .{});
                 }
             }
 
