@@ -148,7 +148,6 @@ pub fn WebSocketState(T: type, comptime contype: WebSocketConnectionType) type {
     return struct {
         const Self = @This();
 
-        allocator: std.mem.Allocator,
         buffer: std.ArrayList(u8),
 
         client: WebSocketClient(contype),
@@ -179,7 +178,6 @@ pub fn WebSocketState(T: type, comptime contype: WebSocketConnectionType) type {
         pub fn init(allocator: std.mem.Allocator, context: *T, client: apenetwork.Client, callbacks: WebSocketCallbacks(T, contype)) Self {
             return Self {
                 .buffer = std.ArrayList(u8).init(allocator),
-                .allocator = allocator,
                 .callbacks = callbacks,
                 .context = context,
                 .client = WebSocketClient(contype){.client = client }
@@ -316,6 +314,7 @@ pub fn WebSocketState(T: type, comptime contype: WebSocketConnectionType) type {
 
                 .close => {
                     // Uncomment if we ever need to read the close reason
+                    //
                     // const reason : u16 = brk: {
                     //     if (self.buffer.items.len < 2) break :brk 0;
                     //     break :brk self.buffer.items[1] | @as(u16, @intCast(self.buffer.items[0])) << 8;
@@ -329,9 +328,7 @@ pub fn WebSocketState(T: type, comptime contype: WebSocketConnectionType) type {
                     self.client.pong(self.buffer.items);
                 },
 
-                .pong => {
-                    std.debug.print("[Pong frame]\n", .{});
-                },
+                .pong => {},
 
                 _ => {
                     std.debug.print("Unsupported opcode\n", .{});

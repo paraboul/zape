@@ -4,30 +4,42 @@
         <script>
           console.log("Starting ws connection...");
 
-          const socket = new WebSocket("ws://127.0.0.1:80/hello");
+          function createPushConnection() {
+              const socket = new WebSocket("ws://127.0.0.1:80");
+              let connected = false;
+              let timer = 0;
 
-          // Connection opened
-          socket.addEventListener("open", (event) => {
-            console.log("Connexion accepted by server");
+              // Connection opened
+              socket.addEventListener("open", (event) => {
+                  console.log("[push] Connexion accepted by server");
 
-            setInterval(() => {
-              socket.send("Hello Server!");
-            }, 100)
+                  connected = true;
 
-          });
+                  timer = setInterval(() => {
+                      const buffer = new Uint8Array([0x0a]);
+                      if (connected) {
+                          socket.send("Hello");
+                      }
+                  }, 2000)
 
-          // Listen for messages
-          socket.addEventListener("message", (event) => {
-            console.log("Message from server ", event.data);
-          });
+              });
 
-          socket.addEventListener("error", (event) => {
-            console.log("Errorr", event.error);
-          });
+              socket.addEventListener("close", (event) => {
+                  connected = false;
+                  console.log("[push] Connexion closed by server")
 
-          socket.addEventListener("close", (event) => {
-            console.log("Connexion closed...");
-          });
+                  if (timer) {
+                      clearInterval(timer);
+                  }
+              });
+
+              socket.addEventListener("message", (event) => {
+                console.log(event)
+              })
+
+          }
+
+          createPushConnection();
         </script>
     </body>
 </html>

@@ -167,7 +167,7 @@ pub const HttpParserState = struct {
     }
 
 
-    pub fn acceptWebSocket(self: *HttpParserState, client: apenetwork.Client, on_frame: fn (* const HttpParserState, wsclient: websocket.WebSocketClient(.server), data: [] const u8, user_ctx: *anyopaque) anyerror!void) bool {
+    pub fn acceptWebSocket(self: *HttpParserState, client: apenetwork.Client, on_frame: anytype) bool {
         if (self.headers.get("sec-websocket-key")) |wskey| {
 
             var digest :[20]u8 = undefined;
@@ -189,9 +189,8 @@ pub const HttpParserState = struct {
                 state.* = websocket.WebSocketState(HttpParserState, .server).init(self.allocator, self, client, .{
                     .on_message = struct {
                         fn onwsmessage(wsclient: websocket.WebSocketClient(.server), httpstate: *const HttpParserState, message: [] const u8, _: bool, _: websocket.FrameState) void {
-                            std.debug.print("Callback on message received {s}\n", .{message});
 
-                            on_frame(httpstate, wsclient, message, httpstate.user_ctx.?) catch |err| {
+                            on_frame(httpstate, wsclient, message, @alignCast(@ptrCast(httpstate.user_ctx.?))) catch |err| {
                                 std.debug.print("on frame returned an error: {}\n", .{err});
                             };
                         }

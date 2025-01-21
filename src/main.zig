@@ -1,17 +1,18 @@
 const std = @import("std");
 const apenetwork = @import("libapenetwork");
 const http = @import("http.zig");
-
+const websocket = @import("websocket.zig");
 
 const UserCtx = struct {
     foo: u64 = 100
 };
 
+
 pub fn main() !void {
     apenetwork.init();
 
     var gpa = std.heap.GeneralPurposeAllocator(.{
-        .verbose_log = true
+        .verbose_log = false
     }){};
 
     var server = try http.HttpServer.init(gpa.allocator());
@@ -34,10 +35,10 @@ pub fn main() !void {
         }.onwebsocketrequest,
 
         .onWebSocketFrame = struct {
-            fn onwebsocketframe(request: * const http.HttpParserState, client: apenetwork.WebSocketClient, message: [] const u8, ctx: *UserCtx) void {
+            fn onwebsocketframe(request: * const http.HttpParserState, _: websocket.WebSocketClient(.server), message: [] const u8, ctx: *UserCtx) !void {
                 std.debug.print("WS({d}) FRAME on {s} -> {s}\n", .{ctx.foo, request.getURL().?, message});
 
-                client.write(message, .copy);
+                // client.write(message, .copy);
             }
         }.onwebsocketframe
 
