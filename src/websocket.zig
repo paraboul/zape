@@ -1,7 +1,6 @@
 const std = @import("std");
 const apenetwork = @import("libapenetwork");
 
-
 const maximum_preallocated_bytes_per_frame = 1024*1024;
 
 pub const WebSocketConnectionType = enum {
@@ -31,7 +30,8 @@ pub const OpCode = enum(u4) {
     close = 0x8,
     ping = 0x9,
     pong = 0xA,
-    _
+    _ // This is needed so that if we can cast an arbitraty
+      //integer to this enum and fallback to unknown value
 };
 
 fn get_masking_key() u32 {
@@ -167,7 +167,7 @@ pub fn WebSocketState(T: type, comptime contype: WebSocketConnectionType) type {
             pos: u2 = 0
         } = .{},
 
-        data_inkey: u2 = 0, // Increment with data_inkey +%= 1
+        data_inkey: u2 = 0,
         masking: bool = false,
         close_sent: bool = false,
 
@@ -255,8 +255,6 @@ pub fn WebSocketState(T: type, comptime contype: WebSocketConnectionType) type {
                         self.cipher.key[self.cipher.pos] = byte;
 
                         if (self.cipher.pos == 3) {
-
-                            // TODO: no length ? end message
                             self.step = .step_data;
 
                             if (self.frame.length == 0) {
@@ -298,10 +296,6 @@ pub fn WebSocketState(T: type, comptime contype: WebSocketConnectionType) type {
             const is_binary = opcode == .binary or (opcode == .continuation and (self.frame.prevheader & 0x0F) == 0x2);
 
             switch (opcode) {
-
-                // 0x0 = Continuation frame
-                // 0x1 = ASCII frame
-                // 0x2 = binary frame
                 .continuation, .text, .binary => {
                     const is_fin = (self.frame.header & 0xf0) == 0x80;
 
@@ -317,32 +311,24 @@ pub fn WebSocketState(T: type, comptime contype: WebSocketConnectionType) type {
 
                     if (self.callbacks.on_message) |on_message| {
                         on_message(self.client, self.context, self.buffer.items, is_binary, frame_state);
-
-                        self.client.write(self.buffer.items, .text, .copy);
-
-                        self.client.ping("Rahlo");
                     }
                 },
 
-                // Close frame
                 .close => {
-                    const reason : u16 = brk: {
-                        if (self.buffer.items.len < 2) break :brk 0;
-                        break :brk self.buffer.items[1] | @as(u16, @intCast(self.buffer.items[0])) << 8;
-                    };
+                    // Uncomment if we ever need to read the close reason
+                    // const reason : u16 = brk: {
+                    //     if (self.buffer.items.len < 2) break :brk 0;
+                    //     break :brk self.buffer.items[1] | @as(u16, @intCast(self.buffer.items[0])) << 8;
+                    // };
 
                     self.client.close();
-                    std.debug.print("[Close frame] {d}\n", .{reason});
                 },
 
-                // Ping frame
                 .ping => {
-                    std.debug.print("[Ping frame]\n", .{});
                     // Send pong back with the same Application data
                     self.client.pong(self.buffer.items);
                 },
 
-                // Pong frame
                 .pong => {
                     std.debug.print("[Pong frame]\n", .{});
                 },
