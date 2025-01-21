@@ -167,7 +167,7 @@ pub const HttpParserState = struct {
     }
 
 
-    pub fn acceptWebSocket(self: *HttpParserState, client: apenetwork.Client, _: fn (* const HttpParserState, [] const u8, user_ctx: *anyopaque) anyerror!void) bool {
+    pub fn acceptWebSocket(self: *HttpParserState, client: apenetwork.Client, on_frame: fn (* const HttpParserState, wsclient: websocket.WebSocketClient(.server), data: [] const u8, user_ctx: *anyopaque) anyerror!void) bool {
         if (self.headers.get("sec-websocket-key")) |wskey| {
 
             var digest :[20]u8 = undefined;
@@ -183,10 +183,19 @@ pub const HttpParserState = struct {
             client.write("\r\nSec-WebSocket-Origin: 127.0.0.1\r\n\r\n", .static);
             client.tcpBufferEnd();
 
+            // Initialize WebSocket state and its callbacks
             self.websocket_state = brk: {
                 const state = self.allocator.create(websocket.WebSocketState(HttpParserState, .server)) catch @panic("OOM");
                 state.* = websocket.WebSocketState(HttpParserState, .server).init(self.allocator, self, client, .{
-                    .on_message = HttpParserState.on_websocket_message
+                    .on_message = struct {
+                        fn onwsmessage(wsclient: websocket.WebSocketClient(.server), httpstate: *const HttpParserState, message: [] const u8, _: bool, _: websocket.FrameState) void {
+                            std.debug.print("Callback on message received {s}\n", .{message});
+
+                            on_frame(httpstate, wsclient, message, httpstate.user_ctx.?) catch |err| {
+                                std.debug.print("on frame returned an error: {}\n", .{err});
+                            };
+                        }
+                    }.onwsmessage
                 });
                 break :brk state;
             };
@@ -282,17 +291,26 @@ pub const HttpServer = struct {
 
                                 const result = onwebsocketrequest(parser, client, @alignCast(@ptrCast(parser.user_ctx.?)));
 
-                                if (!result or !parser.acceptWebSocket(client, struct {
-                                    fn onframe(_: * const HttpParserState, _: [] const u8, _: *anyopaque) !void {
+                                if (!result
+                                    or httpconfig.onWebSocketFrame == null
+                                    or !parser.acceptWebSocket(client, httpconfig.onWebSocketFrame.?)) {
 
-                                        if (httpconfig.onWebSocketFrame) |_| {
-                                            // bench with inline
-                                            // try onwebsocketframe(frame_state, apenetwork.WebSocketClient{ .state = frame_state.websocket_state.? }, frame_data, @alignCast(@ptrCast(ctx)));
-                                        }
-                                    }
-                                }.onframe)) {
                                     return error.HttpUnsupportedWebSocket;
                                 }
+
+                                // if (!result or !parser.acceptWebSocket(client, struct {
+                                //     fn onframe(_: * const HttpParserState, _: websocket.WebSocketClient(.server), _: [] const u8, _: *anyopaque) !void {
+
+                                //         if (httpconfig.onWebSocketFrame) |_| {
+
+                                //             std.debug.print("Forward to original callbacl\n", .{});
+                                //             // bench with inline
+                                //             // try onwebsocketframe(frame_state, apenetwork.WebSocketClient{ .state = frame_state.websocket_state.? }, frame_data, @alignCast(@ptrCast(ctx)));
+                                //         }
+                                //     }
+                                // }.onframe)) {
+                                //     return error.HttpUnsupportedWebSocket;
+                                // }
                             }
                         },
 
