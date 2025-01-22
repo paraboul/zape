@@ -157,12 +157,13 @@ pub const HttpParserState = struct {
     }
 
     pub fn deinit(self: *HttpParserState) void {
-        self.headers.deinit();
-        self.arena.deinit();
 
         if (self.websocket_state) |wsstate| {
             wsstate.deinit();
         }
+        self.headers.deinit();
+        self.arena.deinit();
+
     }
 
     pub fn acceptWebSocket(self: *HttpParserState, client: apenetwork.Client, on_frame: anytype) bool {
@@ -183,7 +184,7 @@ pub const HttpParserState = struct {
 
             // Initialize WebSocket state and its callbacks
             self.websocket_state = brk: {
-                const state = self.allocator.create(websocket.WebSocketState(HttpParserState, .server)) catch @panic("OOM");
+                const state = self.arena.allocator().create(websocket.WebSocketState(HttpParserState, .server)) catch @panic("OOM");
                 state.* = websocket.WebSocketState(HttpParserState, .server).init(self.allocator, self, client, .{
                     .on_message = struct {
                         fn onwsmessage(wsclient: *websocket.WebSocketClient(.server), httpstate: *const HttpParserState, message: [] const u8, _: bool, _: websocket.FrameState) void {
