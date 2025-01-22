@@ -108,15 +108,6 @@ fn client_onhttpdata(_: *apenetwork.Server, client: apenetwork.Client, data: []c
     };
 }
 
-
-const HttpRequest = struct {
-    state: * const HttpParserState,
-
-    pub fn getHeader(self: *const HttpRequest, key: [] const u8) ?[] const u8 {
-        return self.state.headers.get(key);
-    }
-};
-
 pub const HttpParserState = struct {
 
     server: *HttpServer,
