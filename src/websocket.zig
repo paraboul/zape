@@ -55,7 +55,7 @@ fn get_masking_key() u32 {
 
 pub fn WebSocketCallbacks(T: type, comptime contype: WebSocketConnectionType) type {
     return struct {
-        on_message: ?* const fn(client: WebSocketClient(contype), context: * const T, data: [] const u8, is_binary: bool, frame: FrameState) void = null
+        on_message: ?* const fn(client: *WebSocketClient(contype), context: * const T, data: [] const u8, is_binary: bool, frame: FrameState) void = null
     };
 }
 
@@ -308,7 +308,7 @@ pub fn WebSocketState(T: type, comptime contype: WebSocketConnectionType) type {
                     };
 
                     if (self.callbacks.on_message) |on_message| {
-                        on_message(self.client, self.context, self.buffer.items, is_binary, frame_state);
+                        on_message(&self.client, self.context, self.buffer.items, is_binary, frame_state);
                     }
                 },
 

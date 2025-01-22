@@ -35,7 +35,7 @@ pub fn main() !void {
         }.onwebsocketrequest,
 
         .onWebSocketFrame = struct {
-            fn onwebsocketframe(request: * const http.HttpParserState, _: websocket.WebSocketClient(.server), message: [] const u8, ctx: *UserCtx) !void {
+            fn onwebsocketframe(request: * const http.HttpParserState, _: *websocket.WebSocketClient(.server), message: [] const u8, ctx: *UserCtx) !void {
                 std.debug.print("WS({d}) FRAME on {s} -> {s}\n", .{ctx.foo, request.getURL().?, message});
 
                 // client.write(message, .copy);

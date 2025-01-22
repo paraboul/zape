@@ -20,7 +20,7 @@ pub fn HttpServerConfig(comptime T: type) type {
         onDisconnect: ?fn (* const HttpParserState, apenetwork.Client, ?*T) void = null,
         onRequest: ?fn (* const HttpParserState, apenetwork.Client, *T) void = null,
         onWebSocketRequest: ?fn (* const HttpParserState, apenetwork.Client, *T) bool = null,
-        onWebSocketFrame: ?fn (* const HttpParserState, websocket.WebSocketClient(.server), [] const u8, *T) anyerror!void = null,
+        onWebSocketFrame: ?fn (* const HttpParserState, *websocket.WebSocketClient(.server), [] const u8, *T) anyerror!void = null,
     };
 }
 
@@ -162,11 +162,6 @@ pub const HttpParserState = struct {
         }
     }
 
-    fn on_websocket_message(_: websocket.WebSocketClient(.server), _: *const HttpParserState, _: [] const u8, _: bool, _: websocket.FrameState) void {
-        std.debug.print("Got message on websocket\n", .{});
-    }
-
-
     pub fn acceptWebSocket(self: *HttpParserState, client: apenetwork.Client, on_frame: anytype) bool {
         if (self.headers.get("sec-websocket-key")) |wskey| {
 
@@ -188,9 +183,11 @@ pub const HttpParserState = struct {
                 const state = self.allocator.create(websocket.WebSocketState(HttpParserState, .server)) catch @panic("OOM");
                 state.* = websocket.WebSocketState(HttpParserState, .server).init(self.allocator, self, client, .{
                     .on_message = struct {
-                        fn onwsmessage(wsclient: websocket.WebSocketClient(.server), httpstate: *const HttpParserState, message: [] const u8, _: bool, _: websocket.FrameState) void {
+                        fn onwsmessage(wsclient: *websocket.WebSocketClient(.server), httpstate: *const HttpParserState, message: [] const u8, _: bool, _: websocket.FrameState) void {
 
                             on_frame(httpstate, wsclient, message, @alignCast(@ptrCast(httpstate.user_ctx.?))) catch |err| {
+
+                                wsclient.close();
                                 std.debug.print("on frame returned an error: {}\n", .{err});
                             };
                         }
