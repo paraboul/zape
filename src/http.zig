@@ -118,6 +118,8 @@ const HttpRequest = struct {
 };
 
 pub const HttpParserState = struct {
+
+    server: *HttpServer,
     state: llhttp.c.llhttp_t,
     headers: std.StringHashMap([]const u8),
     done: bool = false,
@@ -135,11 +137,12 @@ pub const HttpParserState = struct {
 
     user_ctx: ?*anyopaque = null,
 
-    pub fn init(allocator: std.mem.Allocator) HttpParserState {
+    pub fn init(allocator: std.mem.Allocator, server: *HttpServer) HttpParserState {
 
         return HttpParserState {
             .allocator = allocator,
             .arena = std.heap.ArenaAllocator.init(allocator),
+            .server = server,
             .state = state: {
                 var parser : llhttp.c.llhttp_t = .{};
 
@@ -223,6 +226,10 @@ pub const HttpServer = struct {
         };
     }
 
+    pub fn deinit(self: *HttpServer) void {
+        self.server.deinit();
+    }
+
     pub fn start(self: *HttpServer, comptime httpconfig: anytype) !void {
         try self.server.start(httpconfig.port, .{
             .onConnect = struct {
@@ -231,7 +238,7 @@ pub const HttpServer = struct {
 
                     client.socket.*.ctx = parser: {
                         const parser = httpserver.allocator.create(HttpParserState) catch break :parser null;
-                        parser.* = HttpParserState.init(httpserver.allocator);
+                        parser.* = HttpParserState.init(httpserver.allocator, httpserver);
 
                         break :parser parser;
                     };

@@ -84,6 +84,10 @@ pub const Server = struct {
         };
     }
 
+    pub fn deinit(self: *Server) void {
+        c.APE_socket_shutdown(self.socket);
+    }
+
     pub fn start(self: *Self, port: u16, comptime callbacks: ServerCallbacks) !void {
 
         if (c.APE_socket_listen(self.socket, port, "0.0.0.0", 0, 0) == -1) {
@@ -137,6 +141,4 @@ pub fn startLoop() void {
 
 pub fn init() void {
     _ = c.APE_init();
-
-    std.debug.print(("APE init"), .{});
 }
