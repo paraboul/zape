@@ -154,7 +154,6 @@ pub const HttpParserState = struct {
         }
         self.headers.deinit();
         self.arena.deinit();
-
     }
 
     pub fn acceptWebSocket(self: *HttpParserState, client: apenetwork.Client, on_frame: anytype) bool {
