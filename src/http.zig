@@ -277,7 +277,6 @@ pub const HttpServer = struct {
 
                             parser.user_ctx = blk: {
                                 const ctx = try parser.arena.allocator().create(httpconfig.ctxType);
-                                ctx.* = httpconfig.ctxType{};
                                 break :blk ctx;
                             };
 
@@ -311,7 +310,7 @@ pub const HttpServer = struct {
                         .done => {
                             parser.user_ctx = blk: {
                                 const ctx = try parser.arena.allocator().create(httpconfig.ctxType);
-                                ctx.* = httpconfig.ctxType{};
+                                // ctx.* = httpconfig.ctxType{};
                                 break :blk ctx;
                             };
 
