@@ -139,6 +139,10 @@ pub fn startLoop() void {
     c.APE_loop_run(c.APE_get());
 }
 
+pub fn stopLoop() void {
+    c.APE_loop_stop();
+}
+
 pub fn init() void {
     _ = c.APE_init();
 }

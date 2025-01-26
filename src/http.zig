@@ -17,10 +17,10 @@ pub fn HttpServerConfig(comptime T: type) type {
         port: u16 = 80,
 
         onConnect: ?fn () void = null,
-        onDisconnect: ?fn (* const HttpParserState, apenetwork.Client, ?*T) void = null,
-        onRequest: ?fn (* const HttpParserState, apenetwork.Client, *T) void = null,
-        onWebSocketRequest: ?fn (* const HttpParserState, apenetwork.Client, *T) bool = null,
-        onWebSocketFrame: ?fn (* const HttpParserState, *websocket.WebSocketClient(.server), [] const u8, *T) anyerror!void = null,
+        onDisconnect: ?fn (* const HttpRequestCtx, apenetwork.Client, ?*T) void = null,
+        onRequest: ?fn (* const HttpRequestCtx, apenetwork.Client, *T) void = null,
+        onWebSocketRequest: ?fn (* const HttpRequestCtx, apenetwork.Client, *T) bool = null,
+        onWebSocketFrame: ?fn (* const HttpRequestCtx, *websocket.WebSocketClient(.server), [] const u8, *T) anyerror!void = null,
     };
 }
 
@@ -37,7 +37,7 @@ const http_parser_settings : llhttp.c.llhttp_settings_t  = .{
 fn http_on_parse_header_data(comptime field_name: []const u8) type {
     return struct {
         fn func(state: [*c]llhttp.c.llhttp_t, data: [*c]const u8, size: usize) callconv(.C) c_int {
-            const parser : *HttpParserState = @fieldParentPtr("state", @as(*llhttp.c.llhttp_t, state));
+            const parser : *HttpRequestCtx = @fieldParentPtr("state", @as(*llhttp.c.llhttp_t, state));
             const allocator = parser.arena.allocator();
 
 
@@ -54,7 +54,7 @@ fn http_on_header_field_complete(_: [*c]llhttp.c.llhttp_t) callconv(.C) c_int {
 }
 
 fn http_on_header_value_complete(state: [*c]llhttp.c.llhttp_t) callconv(.C) c_int {
-    const parser : *HttpParserState = @fieldParentPtr("state", @as(*llhttp.c.llhttp_t, state));
+    const parser : *HttpRequestCtx = @fieldParentPtr("state", @as(*llhttp.c.llhttp_t, state));
 
     const allocator = parser.arena.allocator();
 
@@ -70,7 +70,7 @@ fn http_on_header_value_complete(state: [*c]llhttp.c.llhttp_t) callconv(.C) c_in
 }
 
 fn http_on_header_value(state: [*c]llhttp.c.llhttp_t, data: [*c]const u8, size: usize) callconv(.C) c_int {
-    const parser : *HttpParserState = @fieldParentPtr("state", @as(*llhttp.c.llhttp_t, state));
+    const parser : *HttpRequestCtx = @fieldParentPtr("state", @as(*llhttp.c.llhttp_t, state));
 
     const allocator = parser.arena.allocator();
 
@@ -84,7 +84,7 @@ fn http_on_headers_complete(_: [*c]llhttp.c.llhttp_t) callconv(.C) c_int {
 }
 
 fn http_on_message_complete(state: [*c]llhttp.c.llhttp_t) callconv(.C) c_int {
-    const parser : *HttpParserState = @fieldParentPtr("state", @as(*llhttp.c.llhttp_t, state));
+    const parser : *HttpRequestCtx = @fieldParentPtr("state", @as(*llhttp.c.llhttp_t, state));
 
     parser.done = true;
 
@@ -94,7 +94,7 @@ fn http_on_message_complete(state: [*c]llhttp.c.llhttp_t) callconv(.C) c_int {
 fn client_connected(_: *apenetwork.Server, _: apenetwork.Client) void {}
 
 fn client_onhttpdata(_: *apenetwork.Server, client: apenetwork.Client, data: []const u8) ParseReturnState {
-    const parser : *HttpParserState = @ptrCast(@alignCast(client.socket.*.ctx orelse return .cont));
+    const parser : *HttpRequestCtx = @ptrCast(@alignCast(client.socket.*.ctx orelse return .cont));
 
     const llhttp_errno = llhttp.c.llhttp_execute(&parser.state, data.ptr, data.len);
 
@@ -108,9 +108,7 @@ fn client_onhttpdata(_: *apenetwork.Server, client: apenetwork.Client, data: []c
     };
 }
 
-pub const HttpParserState = struct {
-
-    server: *HttpServer,
+pub const HttpRequestCtx = struct {
     state: llhttp.c.llhttp_t,
     headers: std.StringHashMap([]const u8),
     done: bool = false,
@@ -124,16 +122,15 @@ pub const HttpParserState = struct {
         acc_url: std.ArrayListUnmanaged(u8) = .{}
     } = .{},
 
-    websocket_state: ?*websocket.WebSocketState(HttpParserState, .server) = null,
+    websocket_state: ?*websocket.WebSocketState(HttpRequestCtx, .server) = null,
 
     user_ctx: ?*anyopaque = null,
 
-    pub fn init(allocator: std.mem.Allocator, server: *HttpServer) HttpParserState {
+    pub fn init(allocator: std.mem.Allocator) HttpRequestCtx {
 
-        return HttpParserState {
+        return HttpRequestCtx {
             .allocator = allocator,
             .arena = std.heap.ArenaAllocator.init(allocator),
-            .server = server,
             .state = state: {
                 var parser : llhttp.c.llhttp_t = .{};
 
@@ -147,7 +144,7 @@ pub const HttpParserState = struct {
         };
     }
 
-    pub fn deinit(self: *HttpParserState) void {
+    pub fn deinit(self: *HttpRequestCtx) void {
 
         if (self.websocket_state) |wsstate| {
             wsstate.deinit();
@@ -156,7 +153,7 @@ pub const HttpParserState = struct {
         self.arena.deinit();
     }
 
-    pub fn acceptWebSocket(self: *HttpParserState, client: apenetwork.Client, on_frame: anytype) bool {
+    pub fn acceptWebSocket(self: *HttpRequestCtx, client: apenetwork.Client, on_frame: anytype) bool {
         if (self.headers.get("sec-websocket-key")) |wskey| {
 
             var digest :[20]u8 = undefined;
@@ -174,12 +171,12 @@ pub const HttpParserState = struct {
 
             // Initialize WebSocket state and its callbacks
             self.websocket_state = brk: {
-                const state = self.arena.allocator().create(websocket.WebSocketState(HttpParserState, .server)) catch @panic("OOM");
-                state.* = websocket.WebSocketState(HttpParserState, .server).init(self.allocator, self, client, .{
+                const state = self.arena.allocator().create(websocket.WebSocketState(HttpRequestCtx, .server)) catch @panic("OOM");
+                state.* = websocket.WebSocketState(HttpRequestCtx, .server).init(self.allocator, self, client, .{
                     .on_message = struct {
-                        fn onwsmessage(wsclient: *websocket.WebSocketClient(.server), httpstate: *const HttpParserState, message: [] const u8, _: bool, _: websocket.FrameState) void {
+                        fn onwsmessage(wsclient: *websocket.WebSocketClient(.server), httpstate: *const HttpRequestCtx, message: [] const u8, _: bool, _: websocket.FrameState) void {
 
-                            on_frame(httpstate, wsclient, message, @alignCast(@ptrCast(httpstate.user_ctx.?))) catch |err| {
+                            on_frame(@alignCast(@ptrCast(httpstate.user_ctx.?)), wsclient, message) catch |err| {
 
                                 wsclient.close();
                                 std.debug.print("on frame returned an error: {}\n", .{err});
@@ -196,7 +193,7 @@ pub const HttpParserState = struct {
         return false;
     }
 
-    pub fn getURL(self: *const HttpParserState) ?[] const u8 {
+    pub fn getURL(self: *const HttpRequestCtx) ?[] const u8 {
         if (!self.done) {
             return null;
         }
@@ -206,123 +203,136 @@ pub const HttpParserState = struct {
 };
 
 
-pub const HttpServer = struct {
-    server: apenetwork.Server,
-    allocator: std.mem.Allocator,
+pub const HttpServerConfig2 = struct {
+    port: u16
+};
 
-    pub fn init(allocator: std.mem.Allocator) !HttpServer {
-        return HttpServer{
-            .server = try apenetwork.Server.init(),
-            .allocator = allocator
-        };
-    }
 
-    pub fn deinit(self: *HttpServer) void {
-        self.server.deinit();
-    }
+pub fn HttpServer2(T: type) type {
 
-    pub fn start(self: *HttpServer, comptime httpconfig: anytype) !void {
-        try self.server.start(httpconfig.port, .{
-            .onConnect = struct {
-                fn connect(server: *apenetwork.Server, client: apenetwork.Client) void {
-                    const httpserver : *HttpServer = @fieldParentPtr("server", server);
+    return struct {
+        const Self = @This();
 
-                    client.socket.*.ctx = parser: {
-                        const parser = httpserver.allocator.create(HttpParserState) catch break :parser null;
-                        parser.* = HttpParserState.init(httpserver.allocator, httpserver);
+        allocator: std.mem.Allocator,
+        config: HttpServerConfig2,
+        server: apenetwork.Server,
 
-                        break :parser parser;
-                    };
+        pub fn init(allocator: std.mem.Allocator, config: HttpServerConfig2) !Self {
+            return .{
+                .allocator = allocator,
+                .config = config,
+                .server = try apenetwork.Server.init(),
+            };
+        }
 
-                    // TODO: callback?
-                    client_connected(server, client);
-                }
-            }.connect,
+        pub fn start(self: *Self) !void {
+            try self.server.start(self.config.port, .{
+                .onConnect = struct {
+                    fn connect(server: *apenetwork.Server, client: apenetwork.Client) void {
+                        const httpserver : *Self = @fieldParentPtr("server", server);
 
-            .onDisconnect = struct {
-                fn disconnect(server: *apenetwork.Server, client: apenetwork.Client) void {
-                    const httpserver : *HttpServer = @fieldParentPtr("server", server);
-                    var parser : *HttpParserState = @ptrCast(@alignCast(client.socket.*.ctx orelse return));
+                        client.socket.*.ctx = parser: {
+                            const parser = httpserver.allocator.create(HttpRequestCtx) catch break :parser null;
+                            parser.* = HttpRequestCtx.init(httpserver.allocator);
 
-                    if (httpconfig.onDisconnect) |ondisconnect| {
-                        ondisconnect(parser, client, @alignCast(@ptrCast(parser.user_ctx)));
+                            break :parser parser;
+                        };
+
+                        std.debug.print("Got a connection\n", .{});
+
+                        // TODO: callback?
                     }
+                }.connect,
 
-                    parser.deinit();
-                    httpserver.allocator.destroy(parser);
-                }
-            }.disconnect,
+                .onDisconnect = struct {
+                    fn disconnect(server: *apenetwork.Server, client: apenetwork.Client) void {
+                        const httpserver : *Self = @fieldParentPtr("server", server);
+                        var parser : *HttpRequestCtx = @ptrCast(@alignCast(client.socket.*.ctx orelse return));
 
-            .onData = struct {
-                fn ondata(server: *apenetwork.Server, client: apenetwork.Client, data: []const u8) !void {
-                    errdefer {
-                        client.write("HTTP/1.1 400 Bad Request\r\n\r\n", .static);
-                        client.close(.queue);
+                        if (parser.user_ctx) |ctx| {
+
+                            const handler : *T = @ptrCast(@alignCast(ctx));
+
+                            if (std.meta.hasFn(T, "onDisconnect")) {
+                                handler.onDisconnect();
+                            }
+                        }
+
+                        // TODO: deinit handler
+
+                        parser.deinit();
+                        httpserver.allocator.destroy(parser);
                     }
+                }.disconnect,
 
-                    const parser : *HttpParserState = @ptrCast(@alignCast(client.socket.*.ctx));
+                .onData = struct {
+                    fn ondata(server: *apenetwork.Server, client: apenetwork.Client, data: []const u8) !void {
+                        errdefer {
+                            client.write("HTTP/1.1 400 Bad Request\r\n\r\n", .static);
+                            client.close(.queue);
+                        }
 
-                    if (parser.websocket_state) |wsnew| {
-                        try wsnew.process_data(data);
+                        const parser : *HttpRequestCtx = @ptrCast(@alignCast(client.socket.*.ctx));
+                        // const httpserver : *Self = @fieldParentPtr("server", server);
 
-                        return;
-                    }
+                        if (parser.websocket_state) |wsnew| {
+                            try wsnew.process_data(data);
 
-                    switch(@call(.always_inline, client_onhttpdata, .{server, client, data})) {
-                        .parse_error => |_| {
-                            return error.HttpParseError;
-                        },
+                            return;
+                        }
 
-                        .websocket_upgrade => {
+                        switch(@call(.always_inline, client_onhttpdata, .{server, client, data})) {
+                            .parse_error => |_| {
+                                return error.HttpParseError;
+                            },
 
-                            parser.user_ctx = blk: {
-                                const ctx = try parser.arena.allocator().create(httpconfig.ctxType);
-                                break :blk ctx;
-                            };
+                            .websocket_upgrade => {
 
-                            if (httpconfig.onWebSocketRequest) |onwebsocketrequest| {
+                                std.debug.print("Upgrade requested\n", .{});
 
-                                const result = onwebsocketrequest(parser, client, @alignCast(@ptrCast(parser.user_ctx.?)));
-
-                                if (!result
-                                    or httpconfig.onWebSocketFrame == null
-                                    or !parser.acceptWebSocket(client, httpconfig.onWebSocketFrame.?)) {
-
+                                if (!std.meta.hasFn(T, "onUpradeToWebSocket")) {
+                                    std.debug.print("Missing callback\n", .{});
                                     return error.HttpUnsupportedWebSocket;
                                 }
 
-                                // if (!result or !parser.acceptWebSocket(client, struct {
-                                //     fn onframe(_: * const HttpParserState, _: websocket.WebSocketClient(.server), _: [] const u8, _: *anyopaque) !void {
+                                const userctx : *T = blk: {
+                                    const ctx = try parser.arena.allocator().create(T);
+                                    ctx.* = T.init();
+                                    break :blk ctx;
+                                };
 
-                                //         if (httpconfig.onWebSocketFrame) |_| {
+                                parser.user_ctx = userctx;
 
-                                //             std.debug.print("Forward to original callbacl\n", .{});
-                                //             // bench with inline
-                                //             // try onwebsocketframe(frame_state, apenetwork.WebSocketClient{ .state = frame_state.websocket_state.? }, frame_data, @alignCast(@ptrCast(ctx)));
-                                //         }
-                                //     }
-                                // }.onframe)) {
-                                //     return error.HttpUnsupportedWebSocket;
-                                // }
-                            }
-                        },
+                                if (!userctx.onUpradeToWebSocket(parser, client)) {
+                                    return error.HttpUnsupportedWebSocket;
+                                }
 
-                        .done => {
-                            parser.user_ctx = blk: {
-                                const ctx = try parser.arena.allocator().create(httpconfig.ctxType);
-                                // ctx.* = httpconfig.ctxType{};
-                                break :blk ctx;
-                            };
+                                if (!parser.acceptWebSocket(client, T.onWebSocketMessage)) {
+                                    return error.HttpUnsupportedWebSocket;
+                                }
+                            },
 
-                            if (httpconfig.onRequest) |onrequest| {
-                                onrequest(parser, client, @alignCast(@ptrCast(parser.user_ctx.?)));
-                            }
-                        },
+                            .done => {
 
-                        else => {}
+                                const userctx : *T = blk: {
+                                    const ctx = try parser.arena.allocator().create(T);
+                                    ctx.* = T.init();
+                                    break :blk ctx;
+                                };
+
+                                parser.user_ctx = userctx;
+
+                                if (std.meta.hasFn(T, "onRequest")) {
+                                    userctx.onRequest(parser, client);
+                                }
+                            },
+
+                            else => {}
+                        }
                     }
-                }
-            }.ondata
-        });
-    }
-};
+                }.ondata
+            });
+        }
+
+    };
+}

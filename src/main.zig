@@ -3,46 +3,50 @@ const apenetwork = @import("libapenetwork");
 const http = @import("http.zig");
 const websocket = @import("websocket.zig");
 
-const UserCtx = struct {
-    foo: u64 = 100
+
+const HttpRequestHandler = struct {
+
+    foo: u32 = 42,
+
+    pub fn init() HttpRequestHandler {
+        return .{};
+    }
+
+    pub fn onRequest(_: * const HttpRequestHandler, _: * const http.HttpRequestCtx, _: apenetwork.Client) void {
+
+    }
+
+    pub fn onUpradeToWebSocket(_: * const HttpRequestHandler, _: * const http.HttpRequestCtx, _: apenetwork.Client) bool {
+        return true;
+    }
+
+    pub fn onDisconnect(_: * const HttpRequestHandler) void {
+
+    }
+
+    pub fn onWebSocketMessage(_: * const HttpRequestHandler, client: *websocket.WebSocketClient(.server), message: [] const u8) !void {
+        std.debug.print("Got ws frame {s}\n", .{message});
+
+        // Echo back the same message
+        client.write(message, .text, .copy);
+    }
 };
 
-
 pub fn main() !void {
+
+    // Init the event loop for the current thread
     apenetwork.init();
 
     var gpa = std.heap.GeneralPurposeAllocator(.{
         .verbose_log = false
     }){};
 
-    var server = try http.HttpServer.init(gpa.allocator());
-
-    try server.start(http.HttpServerConfig(UserCtx) {
-        .port = 80,
-
-        .onRequest = struct {
-            fn onrequest(request: * const http.HttpParserState, _: apenetwork.Client, _: *UserCtx) void {
-                std.debug.print("Got a request {s}\n", .{request.getURL().?});
-            }
-        }.onrequest,
-
-        .onWebSocketRequest = struct {
-            fn onwebsocketrequest(request: * const http.HttpParserState, _: apenetwork.Client, _: *UserCtx) bool {
-                std.debug.print("Got websocket request {s}\n", .{request.getURL().?});
-
-                return true;
-            }
-        }.onwebsocketrequest,
-
-        .onWebSocketFrame = struct {
-            fn onwebsocketframe(request: * const http.HttpParserState, _: *websocket.WebSocketClient(.server), message: [] const u8, ctx: *UserCtx) !void {
-                std.debug.print("WS({d}) FRAME on {s} -> {s}\n", .{ctx.foo, request.getURL().?, message});
-
-                // client.write(message, .copy);
-            }
-        }.onwebsocketframe
-
+    var server = try http.HttpServer2(HttpRequestHandler).init(gpa.allocator(), .{
+        .port = 80
     });
 
+    try server.start();
+
+    // Start the event loop
     apenetwork.startLoop();
 }
