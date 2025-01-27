@@ -242,8 +242,6 @@ pub fn HttpServer2(T: type) type {
                             break :parser parser;
                         };
 
-                        std.debug.print("Got a connection\n", .{});
-
                         // TODO: callback?
                     }
                 }.connect,
@@ -292,10 +290,7 @@ pub fn HttpServer2(T: type) type {
 
                             .websocket_upgrade => {
 
-                                std.debug.print("Upgrade requested\n", .{});
-
-                                if (!std.meta.hasFn(T, "onUpradeToWebSocket")) {
-                                    std.debug.print("Missing callback\n", .{});
+                                if (!std.meta.hasFn(T, "onUpradeToWebSocket") or !std.meta.hasFn(T, "onWebSocketMessage")) {
                                     return error.HttpUnsupportedWebSocket;
                                 }
 
