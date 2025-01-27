@@ -10,20 +10,6 @@ const ParseReturnState = union(enum) {
     parse_error: llhttp.c.llhttp_errno_t
 };
 
-pub fn HttpServerConfig(comptime T: type) type {
-
-    return struct {
-        ctxType: type = T,
-        port: u16 = 80,
-
-        onConnect: ?fn () void = null,
-        onDisconnect: ?fn (* const HttpRequestCtx, apenetwork.Client, ?*T) void = null,
-        onRequest: ?fn (* const HttpRequestCtx, apenetwork.Client, *T) void = null,
-        onWebSocketRequest: ?fn (* const HttpRequestCtx, apenetwork.Client, *T) bool = null,
-        onWebSocketFrame: ?fn (* const HttpRequestCtx, *websocket.WebSocketClient(.server), [] const u8, *T) anyerror!void = null,
-    };
-}
-
 const http_parser_settings : llhttp.c.llhttp_settings_t  = .{
     .on_url = http_on_parse_header_data("acc_url").func,
     .on_header_field = http_on_parse_header_data("acc_field").func,
@@ -203,7 +189,7 @@ pub const HttpRequestCtx = struct {
 };
 
 
-pub const HttpServerConfig2 = struct {
+pub const HttpServerConfig = struct {
     port: u16,
     address: [] const u8 = "0.0.0.0"
 };
@@ -215,10 +201,10 @@ pub fn HttpServer2(T: type) type {
         const Self = @This();
 
         allocator: std.mem.Allocator,
-        config: HttpServerConfig2,
+        config: HttpServerConfig,
         server: apenetwork.Server,
 
-        pub fn init(allocator: std.mem.Allocator, config: HttpServerConfig2) !Self {
+        pub fn init(allocator: std.mem.Allocator, config: HttpServerConfig) !Self {
             return .{
                 .allocator = allocator,
                 .config = config,
@@ -290,6 +276,7 @@ pub fn HttpServer2(T: type) type {
 
                             .websocket_upgrade => {
 
+                                // These two functions must be implemented in order to accept WS upgrade
                                 if (!std.meta.hasFn(T, "onUpradeToWebSocket") or !std.meta.hasFn(T, "onWebSocketMessage")) {
                                     return error.HttpUnsupportedWebSocket;
                                 }
