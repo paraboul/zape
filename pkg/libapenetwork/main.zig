@@ -73,14 +73,22 @@ const ServerCallbacks = struct {
     onData: ?fn (*Server, Client, []const u8) anyerror!void = null
 };
 
+const ServerConfig = struct {
+    port: u16,
+    address: [] const u8 = "0.0.0.0",
+};
+
 pub const Server = struct {
     const Self = @This();
 
+    config: ServerConfig,
+
     socket : [*c]c.ape_socket = null,
 
-    pub fn init() !Server {
+    pub fn init(config: ServerConfig) !Server {
         return .{
-            .socket = c.APE_socket_new(c.APE_SOCKET_PT_TCP, 0, c.APE_get())
+            .socket = c.APE_socket_new(c.APE_SOCKET_PT_TCP, 0, c.APE_get()),
+            .config = config
         };
     }
 
@@ -88,9 +96,9 @@ pub const Server = struct {
         c.APE_socket_shutdown(self.socket);
     }
 
-    pub fn start(self: *Self, port: u16, comptime callbacks: ServerCallbacks) !void {
+    pub fn start(self: *Self, comptime callbacks: ServerCallbacks) !void {
 
-        if (c.APE_socket_listen(self.socket, port, "0.0.0.0", 0, 0) == -1) {
+        if (c.APE_socket_listen(self.socket, self.config.port, self.config.address.ptr, 0, 0) == -1) {
             return error.APE_socket_listen_error;
         }
 

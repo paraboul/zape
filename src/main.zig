@@ -42,7 +42,7 @@ pub fn main() !void {
     }){};
 
     var server = try http.HttpServer2(HttpRequestHandler).init(gpa.allocator(), .{
-        .port = 80
+        .port = 80,
     });
 
     try server.start();

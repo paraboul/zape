@@ -204,7 +204,8 @@ pub const HttpRequestCtx = struct {
 
 
 pub const HttpServerConfig2 = struct {
-    port: u16
+    port: u16,
+    address: [] const u8 = "0.0.0.0"
 };
 
 
@@ -221,12 +222,15 @@ pub fn HttpServer2(T: type) type {
             return .{
                 .allocator = allocator,
                 .config = config,
-                .server = try apenetwork.Server.init(),
+                .server = try apenetwork.Server.init(.{
+                    .port = config.port,
+                    .address = config.address
+                }),
             };
         }
 
         pub fn start(self: *Self) !void {
-            try self.server.start(self.config.port, .{
+            try self.server.start(.{
                 .onConnect = struct {
                     fn connect(server: *apenetwork.Server, client: apenetwork.Client) void {
                         const httpserver : *Self = @fieldParentPtr("server", server);
