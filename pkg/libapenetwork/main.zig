@@ -65,6 +65,12 @@ pub const Client = struct {
             .queue => c.APE_socket_shutdown(self.socket)
         }
     }
+
+    pub fn getAddr(self: *const Self) [*:0]u8 {
+        // XXX This is using inet_ntoa and so not thread safe
+        // as it's using a globally shared buffer to store that string
+        return c.APE_socket_ipv4(self.socket);
+    }
 };
 
 const ServerCallbacks = struct {
