@@ -2,6 +2,7 @@ const std = @import("std");
 const apenetwork = @import("libapenetwork");
 
 const maximum_preallocated_bytes_per_frame = 1024*1024;
+const ws_guid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
 pub const WebSocketConnectionType = enum {
     client,
@@ -51,6 +52,27 @@ fn get_masking_key() u32 {
     }
 
     return S.prng.?.random().int(u32);
+}
+
+fn get_sha1_accept_key(key: [] const u8, out: *[20]u8) !void {
+
+    if (key.len > 32) {
+        return error.KeyTooLong;
+    }
+
+    var buffer = try std.BoundedArray(u8, 64).init(0);
+
+    try buffer.appendSlice(key);
+    try buffer.appendSlice(ws_guid);
+
+    std.crypto.hash.Sha1.hash(buffer.constSlice(), out, .{});
+}
+
+pub fn get_b64_accept_key(key: [] const u8, out: *[30] u8) ![] const u8 {
+    var sha_hash : [20]u8 = undefined;
+    try get_sha1_accept_key(key, &sha_hash);
+
+    return std.base64.standard.Encoder.encode(out, &sha_hash);
 }
 
 pub fn WebSocketCallbacks(T: type, comptime contype: WebSocketConnectionType) type {

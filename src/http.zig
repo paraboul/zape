@@ -142,11 +142,9 @@ pub const HttpRequestCtx = struct {
     pub fn acceptWebSocket(self: *HttpRequestCtx, client: apenetwork.Client, on_frame: anytype) bool {
         if (self.headers.get("sec-websocket-key")) |wskey| {
 
-            var digest :[20]u8 = undefined;
             var b64key :[30]u8 = undefined;
 
-            apenetwork.c.ape_ws_compute_sha1_key(wskey.ptr, @intCast(wskey.len), &digest);
-            const b64key_slice = std.base64.standard.Encoder.encode(&b64key, &digest);
+            const b64key_slice = websocket.get_b64_accept_key(wskey, &b64key) catch @panic("OOM");
 
             client.tcpBufferStart();
             client.write(apenetwork.c.WEBSOCKET_HARDCODED_HEADERS, .static);
