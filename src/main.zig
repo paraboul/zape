@@ -6,10 +6,16 @@ const websocket = @import("websocket.zig");
 
 const HttpRequestHandler = struct {
 
+    const Self = @This();
+
     foo: u32 = 42,
 
-    pub fn init() HttpRequestHandler {
+    pub fn init(_: * const http.HttpRequestCtx, _: *http.HttpServer(Self)) HttpRequestHandler {
         return .{};
+    }
+
+    pub fn deinit(_: *HttpRequestHandler) void {
+
     }
 
     pub fn onRequest(_: * const HttpRequestHandler, _: * const http.HttpRequestCtx, _: apenetwork.Client) void {
@@ -36,6 +42,8 @@ pub fn main() !void {
 
     // Init the event loop for the current thread
     apenetwork.init();
+
+
 
     var gpa = std.heap.GeneralPurposeAllocator(.{
         .verbose_log = false
