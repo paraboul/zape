@@ -193,7 +193,7 @@ pub const HttpServerConfig = struct {
 };
 
 
-pub fn HttpServer2(T: type) type {
+pub fn HttpServer(T: type) type {
 
     return struct {
         const Self = @This();
@@ -214,6 +214,7 @@ pub fn HttpServer2(T: type) type {
         }
 
         pub fn start(self: *Self) !void {
+
             try self.server.start(.{
                 .onConnect = struct {
                     fn connect(server: *apenetwork.Server, client: apenetwork.Client) void {
@@ -242,9 +243,9 @@ pub fn HttpServer2(T: type) type {
                             if (std.meta.hasFn(T, "onDisconnect")) {
                                 handler.onDisconnect();
                             }
-                        }
 
-                        // TODO: deinit handler
+                            handler.deinit();
+                        }
 
                         parser.deinit();
                         httpserver.allocator.destroy(parser);
@@ -253,11 +254,13 @@ pub fn HttpServer2(T: type) type {
 
                 .onData = struct {
                     fn ondata(server: *apenetwork.Server, client: apenetwork.Client, data: []const u8) !void {
+
                         errdefer {
                             client.write("HTTP/1.1 400 Bad Request\r\n\r\n", .static);
                             client.close(.queue);
                         }
 
+                        const httpserver : *Self = @fieldParentPtr("server", server);
                         const parser : *HttpRequestCtx = @ptrCast(@alignCast(client.socket.*.ctx));
                         // const httpserver : *Self = @fieldParentPtr("server", server);
 
@@ -281,7 +284,7 @@ pub fn HttpServer2(T: type) type {
 
                                 const userctx : *T = blk: {
                                     const ctx = try parser.arena.allocator().create(T);
-                                    ctx.* = T.init();
+                                    ctx.* = T.init(parser, httpserver);
                                     break :blk ctx;
                                 };
 
@@ -300,7 +303,7 @@ pub fn HttpServer2(T: type) type {
 
                                 const userctx : *T = blk: {
                                     const ctx = try parser.arena.allocator().create(T);
-                                    ctx.* = T.init();
+                                    ctx.* = T.init(parser, httpserver);
                                     break :blk ctx;
                                 };
 

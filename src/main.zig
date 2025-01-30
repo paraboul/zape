@@ -41,7 +41,7 @@ pub fn main() !void {
         .verbose_log = false
     }){};
 
-    var server = try http.HttpServer2(HttpRequestHandler).init(gpa.allocator(), .{
+    var server = try http.HttpServer(HttpRequestHandler).init(gpa.allocator(), .{
         .port = 80,
     });
 
@@ -49,4 +49,5 @@ pub fn main() !void {
 
     // Start the event loop
     apenetwork.startLoop();
+
 }
