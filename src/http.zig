@@ -116,7 +116,7 @@ pub const HttpRequestCtx = struct {
 
         return HttpRequestCtx {
             .allocator = allocator,
-            .arena = std.heap.ArenaAllocator.init(allocator),
+            .arena = .init(allocator),
             .state = state: {
                 var parser : llhttp.c.llhttp_t = .{};
 
@@ -126,7 +126,7 @@ pub const HttpRequestCtx = struct {
 
                 break :state parser;
             },
-            .headers = std.StringHashMap([]const u8).init(allocator),
+            .headers = .init(allocator),
         };
     }
 
@@ -206,7 +206,7 @@ pub fn HttpServer(T: type) type {
             return .{
                 .allocator = allocator,
                 .config = config,
-                .server = try apenetwork.Server.init(.{
+                .server = try .init(.{
                     .port = config.port,
                     .address = config.address
                 }),
