@@ -199,10 +199,10 @@ pub fn WebSocketState(T: type, comptime contype: WebSocketConnectionType) type {
 
         pub fn init(allocator: std.mem.Allocator, context: *T, client: apenetwork.Client, callbacks: WebSocketCallbacks(T, contype)) Self {
             return Self {
-                .buffer = std.ArrayList(u8).init(allocator),
+                .buffer = .init(allocator),
                 .callbacks = callbacks,
                 .context = context,
-                .client = WebSocketClient(contype){.client = client }
+                .client = .{.client = client }
             };
         }
 

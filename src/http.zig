@@ -156,7 +156,7 @@ pub const HttpRequestCtx = struct {
             // Initialize WebSocket state and its callbacks
             self.websocket_state = brk: {
                 const state = self.arena.allocator().create(websocket.WebSocketState(HttpRequestCtx, .server)) catch @panic("OOM");
-                state.* = websocket.WebSocketState(HttpRequestCtx, .server).init(self.allocator, self, client, .{
+                state.* = .init(self.allocator, self, client, .{
                     .on_message = struct {
                         fn onwsmessage(wsclient: *websocket.WebSocketClient(.server), httpstate: *const HttpRequestCtx, message: [] const u8, _: bool, _: websocket.FrameState) void {
 
