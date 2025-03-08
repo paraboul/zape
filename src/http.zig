@@ -103,9 +103,9 @@ pub const HttpRequestCtx = struct {
     arena: std.heap.ArenaAllocator,
 
     headers_state: struct {
-        acc_field: std.ArrayListUnmanaged(u8) = .{},
-        acc_value: std.ArrayListUnmanaged(u8) = .{},
-        acc_url: std.ArrayListUnmanaged(u8) = .{}
+        acc_field: std.ArrayListUnmanaged(u8) = .empty,
+        acc_value: std.ArrayListUnmanaged(u8) = .empty,
+        acc_url: std.ArrayListUnmanaged(u8) = .empty
     } = .{},
 
     websocket_state: ?*websocket.WebSocketState(HttpRequestCtx, .server) = null,
