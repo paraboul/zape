@@ -17,7 +17,7 @@ const http_parser_settings : llhttp.c.llhttp_settings_t  = .{
     .on_header_field_complete = http_on_header_field_complete,
     .on_header_value_complete = http_on_header_value_complete,
     .on_headers_complete = http_on_headers_complete,
-    .on_message_complete = http_on_message_complete
+    .on_message_complete = http_on_message_complete,
 };
 
 fn http_on_parse_header_data(comptime field_name: []const u8) type {

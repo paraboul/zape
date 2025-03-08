@@ -13,7 +13,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    lib.defineCMacro("HAVE_CONFIG_H", "1");
+    lib.root_module.addCMacro("HAVE_CONFIG_H", "1");
 
     switch(target.result.os.tag) {
         .linux => lib.addIncludePath(b.path("vendor/include/linux")),

@@ -1,5 +1,5 @@
 .{
-    .name = "libapenetwork",
+    .name = .libapenetwork,
     .version = "0.1.0",
     .paths = .{""},
     .dependencies = .{

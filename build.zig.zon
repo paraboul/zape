@@ -1,5 +1,6 @@
 .{
-    .name = "netserver",
+    .name = .netserver,
+    .fingerprint = 0x192b602af296aaf7,
     .version = "0.0.1",
     .dependencies = .{
         .libapenetwork = .{

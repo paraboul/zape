@@ -1,5 +1,5 @@
 .{
-    .name = "llhttp",
+    .name = .llhttp,
     .version = "9.2.3",
     .paths = .{""},
 }
