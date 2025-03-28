@@ -14,8 +14,8 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    const upstream = b.dependency("libapenetwork", .{});
-    const cares = b.dependency("c-ares", .{});
+    const upstream = b.dependency("libapenetwork", .{ .target = target, .optimize = optimize });
+    const cares = b.dependency("c-ares", .{ .target = target, .optimize = optimize });
 
     const lib = b.addStaticLibrary(.{
         .name = "apenetwork",
