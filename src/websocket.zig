@@ -202,7 +202,7 @@ pub fn WebSocketState(T: type, comptime contype: WebSocketConnectionType) type {
                 .buffer = .init(allocator),
                 .callbacks = callbacks,
                 .context = context,
-                .client = .{.client = client }
+                .client = .{ .client = client }
             };
         }
 

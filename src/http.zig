@@ -114,7 +114,7 @@ pub const HttpRequestCtx = struct {
 
     pub fn init(allocator: std.mem.Allocator) HttpRequestCtx {
 
-        return HttpRequestCtx {
+        return .{
             .allocator = allocator,
             .arena = .init(allocator),
             .state = state: {
@@ -296,6 +296,10 @@ pub fn HttpServer(T: type) type {
 
                                 if (!parser.acceptWebSocket(client, T.onWebSocketMessage)) {
                                     return error.HttpUnsupportedWebSocket;
+                                }
+
+                                if (std.meta.hasFn(T, "onUpgradedToWebSocket")) {
+                                    userctx.onUpgradedToWebSocket(&parser.websocket_state.?.client);
                                 }
                             },
 
