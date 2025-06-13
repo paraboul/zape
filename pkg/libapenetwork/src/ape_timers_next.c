@@ -385,6 +385,37 @@ ape_timer_async_t *APE_async(ape_global *ape_ctx, APE_timer_callback_t cb,
     return async;
 }
 
+void APE_async_destroy(ape_global *ape_ctx, ape_timer_async_t *async) {
+    ape_timers *timers = &ape_ctx->timersng;
+    ape_timer_async_t *cur = timers->head_async;
+    ape_timer_async_t *prev = NULL;
+
+    if (async == NULL) {
+        return;
+    }
+
+    while (cur != NULL) {
+        if (cur == async) {
+            if (prev == NULL) {
+                timers->head_async = cur->next;
+            } else {
+                prev->next = cur->next;
+            }
+
+            if (cur->clearfunc) {
+                cur->clearfunc(cur->arg);
+            }
+
+            free(cur);
+            return;
+        }
+        prev = cur;
+        cur = cur->next;
+    }
+}
+
+
+
 ape_timer_t *APE_timer_create(ape_global *ape_ctx, int ms,
                               APE_timer_callback_t cb, void *arg) {
     ape_timers *timers = &ape_ctx->timersng;

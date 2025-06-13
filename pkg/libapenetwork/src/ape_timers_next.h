@@ -51,6 +51,7 @@ void *APE_timer_getarg(ape_timer_t *timer);
 ape_timer_async_t *APE_async(ape_global *ape_ctx, APE_timer_callback_t cb,
                              void *arg);
 void APE_async_setclearfunc(ape_timer_async_t *async, APE_timer_callback_t cb);
+void APE_async_destroy(ape_global *ape_ctx, ape_timer_async_t *async);
 
 int ape_timers_process(ape_global *ape_ctx);
 void ape_timer_stats_print(ape_timer_t *timer);

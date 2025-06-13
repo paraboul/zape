@@ -13,7 +13,7 @@ pub const DataLifetime = enum {
     copy
 };
 
-pub fn callAsync(comptime callback: anytype, args: anytype) void {
+pub fn callAsync(comptime callback: anytype, args: anytype) ?*anyopaque {
     const gape = c.APE_get();
 
     const wrapper = struct {
@@ -22,7 +22,13 @@ pub fn callAsync(comptime callback: anytype, args: anytype) void {
         }
     };
 
-    _ = c.APE_async(gape, wrapper.wrappedCallback, @constCast(args));
+    return c.APE_async(gape, wrapper.wrappedCallback, @constCast(args));
+}
+
+pub fn deleteAsync(ref: ?*anyopaque) void {
+    const gape = c.APE_get();
+
+    c.APE_async_destroy(gape, @ptrCast(ref));
 }
 
 
