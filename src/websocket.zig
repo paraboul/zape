@@ -81,6 +81,11 @@ pub fn WebSocketCallbacks(T: type, comptime contype: WebSocketConnectionType) ty
     };
 }
 
+pub const WebSocketData = struct {
+    data: []const u8,
+    lifetime: apenetwork.DataLifetime
+};
+
 pub fn WebSocketClient(comptime contype: WebSocketConnectionType) type {
 
     return struct {
@@ -91,6 +96,15 @@ pub fn WebSocketClient(comptime contype: WebSocketConnectionType) type {
         comptime connection_type: WebSocketConnectionType = contype,
 
         pub fn write(self: *const Self, data: []const u8, comptime opcode: OpCode, lifetime: apenetwork.DataLifetime) void {
+            return self.writev(&.{
+                .{
+                    .lifetime = lifetime,
+                    .data = data
+                }
+            }, opcode);
+        }
+
+        pub fn writev(self: *const Self, datav: []const WebSocketData, comptime opcode: OpCode) void {
             if (self.closed) {
                 return;
             }
@@ -108,33 +122,45 @@ pub fn WebSocketClient(comptime contype: WebSocketConnectionType) type {
                 self.client.tcpBufferEnd();
             }
 
-            if (data.len <= 125) {
-                const len : u7 = @truncate(data.len);
+            const data_len = blk: {
+                var t : u64 = 0;
+                for (datav) |data| {
+                    t += data.data.len;
+                }
+
+                break :blk t;
+            };
+
+            if (data_len <= 125) {
+                const len : u7 = @truncate(data_len);
 
                 payload_head[1] |= len;
 
-                self.client.write(payload_head[0..2], lifetime);
+                self.client.write(payload_head[0..2], .copy);
 
-            } else if (data.len <= 65535) {
-                const len : u16 = @truncate(data.len);
+            } else if (data_len <= 65535) {
+                const len : u16 = @truncate(data_len);
 
                 payload_head[1] = 126;
                 std.mem.writeInt(u16, @ptrCast(&payload_head[2]), len, .big);
 
-                self.client.write(payload_head[0..4], lifetime);
+                self.client.write(payload_head[0..4], .copy);
 
-            } else if (data.len <= 0xFFFFFFFF) {
+            } else if (data_len <= 0xFFFFFFFF) {
                 payload_head[1] = 127;
-                std.mem.writeInt(u64, @ptrCast(&payload_head[2]), data.len, .big);
+                std.mem.writeInt(u64, @ptrCast(&payload_head[2]), data_len, .big);
 
-                self.client.write(payload_head[0..10], lifetime);
+                self.client.write(payload_head[0..10], .copy);
             }
 
-            if (data.len != 0) {
+            if (data_len != 0) {
                 if (self.connection_type == .client) {
                     // TODO Masking
                 }
-                self.client.write(data, lifetime);
+
+                for (datav) |data| {
+                    self.client.write(data.data, data.lifetime);
+                }
             }
         }
 
