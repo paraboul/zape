@@ -40,11 +40,11 @@ fn get_masking_key() u32 {
     // This is how you define static in zig
     // Make prng static so it's only initialized the first time it's called
     const S = struct {
-        var prng: ?std.rand.DefaultPrng = null;
+        var prng: ?std.Random.DefaultPrng = null;
     };
 
     if (S.prng == null) {
-        S.prng = std.rand.DefaultPrng.init(blk: {
+        S.prng = std.Random.DefaultPrng.init(blk: {
             var seed: u64 = undefined;
             std.posix.getrandom(std.mem.asBytes(&seed)) catch @panic("Failed to get rand value");
             break :blk seed;
