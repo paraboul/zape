@@ -3,6 +3,8 @@ const llhttp = @import("llhttp");
 const apenetwork = @import("libapenetwork");
 const websocket = @import("websocket.zig");
 
+const MAX_BODY_LEN = 1024 * 1024 * 4;
+
 const ParseReturnState = union(enum) {
     cont,
     done,
@@ -18,7 +20,34 @@ const http_parser_settings : llhttp.c.llhttp_settings_t  = .{
     .on_header_value_complete = http_on_header_value_complete,
     .on_headers_complete = http_on_headers_complete,
     .on_message_complete = http_on_message_complete,
+    .on_body = http_on_body
 };
+
+
+fn http_on_body(state: [*c]llhttp.c.llhttp_t, data: [*c]const u8, len: usize) callconv(.C) c_int {
+    const parser : *HttpRequestCtx = @fieldParentPtr("state", @as(*llhttp.c.llhttp_t, state));
+    const allocator = parser.arena.allocator();
+
+    if (parser.headers_state.acc_body.capacity == 0) {
+        if (parser.headers.get("content-length")) |cl| {
+            const cl_int = std.fmt.parseInt(u32, cl, 10) catch return -1;
+
+            if (cl_int > MAX_BODY_LEN) {
+                return -1;
+            }
+
+            parser.headers_state.acc_body.ensureTotalCapacity(allocator, cl_int) catch return -1;
+        }
+    }
+
+    if (parser.headers_state.acc_body.items.len + len > parser.headers_state.acc_body.capacity) {
+        return -1;
+    }
+
+    parser.headers_state.acc_body.appendSliceAssumeCapacity(data[0..len]);
+
+    return 0;
+}
 
 fn http_on_parse_header_data(comptime field_name: []const u8) type {
     return struct {
@@ -26,7 +55,7 @@ fn http_on_parse_header_data(comptime field_name: []const u8) type {
             const parser : *HttpRequestCtx = @fieldParentPtr("state", @as(*llhttp.c.llhttp_t, state));
             const allocator = parser.arena.allocator();
 
-
+            // TODO: why not using size and ensureUnusedCapacity ?
             @field(parser.headers_state, field_name).ensureTotalCapacity(allocator, 32) catch return -1;
             @field(parser.headers_state, field_name).appendSlice(allocator, data[0..size]) catch return -1;
 
@@ -55,18 +84,9 @@ fn http_on_header_value_complete(state: [*c]llhttp.c.llhttp_t) callconv(.C) c_in
     return 0;
 }
 
-fn http_on_header_value(state: [*c]llhttp.c.llhttp_t, data: [*c]const u8, size: usize) callconv(.C) c_int {
-    const parser : *HttpRequestCtx = @fieldParentPtr("state", @as(*llhttp.c.llhttp_t, state));
-
-    const allocator = parser.arena.allocator();
-
-    parser.headers_state.acc_value.appendSlice(allocator, data[0..size]) catch return 0;
-
-    return 0;
-}
 
 fn http_on_headers_complete(_: [*c]llhttp.c.llhttp_t) callconv(.C) c_int {
-    return 1;
+    return 0;
 }
 
 fn http_on_message_complete(state: [*c]llhttp.c.llhttp_t) callconv(.C) c_int {
@@ -105,7 +125,8 @@ pub const HttpRequestCtx = struct {
     headers_state: struct {
         acc_field: std.ArrayListUnmanaged(u8) = .empty,
         acc_value: std.ArrayListUnmanaged(u8) = .empty,
-        acc_url: std.ArrayListUnmanaged(u8) = .empty
+        acc_url: std.ArrayListUnmanaged(u8) = .empty,
+        acc_body: std.ArrayListUnmanaged(u8) = .empty
     } = .{},
 
     websocket_state: ?*websocket.WebSocketState(HttpRequestCtx, .server) = null,
@@ -120,7 +141,7 @@ pub const HttpRequestCtx = struct {
             .state = state: {
                 var parser : llhttp.c.llhttp_t = .{};
 
-                llhttp.c.llhttp_init(&parser, llhttp.c.HTTP_BOTH, &http_parser_settings);
+                llhttp.c.llhttp_init(&parser, llhttp.c.HTTP_REQUEST, &http_parser_settings);
                 llhttp.c.llhttp_set_lenient_optional_cr_before_lf(&parser, 1);
                 llhttp.c.llhttp_set_lenient_optional_lf_after_cr(&parser, 1);
 
@@ -142,7 +163,7 @@ pub const HttpRequestCtx = struct {
     pub fn acceptWebSocket(self: *HttpRequestCtx, client: apenetwork.Client, on_frame: anytype) bool {
         if (self.headers.get("sec-websocket-key")) |wskey| {
 
-            var b64key :[30]u8 = undefined;
+            var b64key : [30]u8 = undefined;
 
             const b64key_slice = websocket.get_b64_accept_key(wskey, &b64key) catch @panic("OOM");
 
@@ -183,6 +204,10 @@ pub const HttpRequestCtx = struct {
         }
 
         return self.headers_state.acc_url.items;
+    }
+
+    pub fn getBody(self: *const HttpRequestCtx) [] const u8 {
+        return self.headers_state.acc_body.items;
     }
 };
 
@@ -264,6 +289,8 @@ pub fn HttpServer(T: type) type {
                         const parser : *HttpRequestCtx = @ptrCast(@alignCast(client.socket.*.ctx));
                         // const httpserver : *Self = @fieldParentPtr("server", server);
 
+                        // We've switch to a websocket context
+                        // Hand the data off directly to the websocket parser
                         if (parser.websocket_state) |wsnew| {
                             try wsnew.process_data(data);
 
@@ -271,7 +298,8 @@ pub fn HttpServer(T: type) type {
                         }
 
                         switch(@call(.always_inline, client_onhttpdata, .{server, client, data})) {
-                            .parse_error => |_| {
+                            .parse_error => |err| {
+                                std.debug.print("Parser error, {s}\n", .{llhttp.c.llhttp_errno_name(err)});
                                 return error.HttpParseError;
                             },
 
@@ -316,6 +344,9 @@ pub fn HttpServer(T: type) type {
                                 if (std.meta.hasFn(T, "onRequest")) {
                                     userctx.onRequest(parser, client);
                                 }
+
+                                client.write("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n", .static);
+                                client.close(.queue);
                             },
 
                             else => {}
