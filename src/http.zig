@@ -25,26 +25,26 @@ const http_parser_settings : llhttp.c.llhttp_settings_t  = .{
 
 
 fn http_on_body(state: [*c]llhttp.c.llhttp_t, data: [*c]const u8, len: usize) callconv(.C) c_int {
-    const parser : *HttpRequestCtx = @fieldParentPtr("state", @as(*llhttp.c.llhttp_t, state));
-    const allocator = parser.arena.allocator();
+    const http_request : *HttpRequestCtx = @fieldParentPtr("state", @as(*llhttp.c.llhttp_t, state));
+    const allocator = http_request.arena.allocator();
 
-    if (parser.headers_state.acc_body.capacity == 0) {
-        if (parser.headers.get("content-length")) |cl| {
+    if (http_request.headers_state.acc_body.capacity == 0) {
+        if (http_request.headers.get("content-length")) |cl| {
             const cl_int = std.fmt.parseInt(u32, cl, 10) catch return -1;
 
             if (cl_int > MAX_BODY_LEN) {
                 return -1;
             }
 
-            parser.headers_state.acc_body.ensureTotalCapacity(allocator, cl_int) catch return -1;
+            http_request.headers_state.acc_body.ensureTotalCapacity(allocator, cl_int) catch return -1;
         }
     }
 
-    if (parser.headers_state.acc_body.items.len + len > parser.headers_state.acc_body.capacity) {
+    if (http_request.headers_state.acc_body.items.len + len > http_request.headers_state.acc_body.capacity) {
         return -1;
     }
 
-    parser.headers_state.acc_body.appendSliceAssumeCapacity(data[0..len]);
+    http_request.headers_state.acc_body.appendSliceAssumeCapacity(data[0..len]);
 
     return 0;
 }
@@ -52,12 +52,12 @@ fn http_on_body(state: [*c]llhttp.c.llhttp_t, data: [*c]const u8, len: usize) ca
 fn http_on_parse_header_data(comptime field_name: []const u8) type {
     return struct {
         fn func(state: [*c]llhttp.c.llhttp_t, data: [*c]const u8, size: usize) callconv(.C) c_int {
-            const parser : *HttpRequestCtx = @fieldParentPtr("state", @as(*llhttp.c.llhttp_t, state));
-            const allocator = parser.arena.allocator();
+            const http_request : *HttpRequestCtx = @fieldParentPtr("state", @as(*llhttp.c.llhttp_t, state));
+            const allocator = http_request.arena.allocator();
 
             // TODO: why not using size and ensureUnusedCapacity ?
-            @field(parser.headers_state, field_name).ensureTotalCapacity(allocator, 32) catch return -1;
-            @field(parser.headers_state, field_name).appendSlice(allocator, data[0..size]) catch return -1;
+            @field(http_request.headers_state, field_name).ensureTotalCapacity(allocator, 32) catch return -1;
+            @field(http_request.headers_state, field_name).appendSlice(allocator, data[0..size]) catch return -1;
 
             return 0;
         }
@@ -69,17 +69,17 @@ fn http_on_header_field_complete(_: [*c]llhttp.c.llhttp_t) callconv(.C) c_int {
 }
 
 fn http_on_header_value_complete(state: [*c]llhttp.c.llhttp_t) callconv(.C) c_int {
-    const parser : *HttpRequestCtx = @fieldParentPtr("state", @as(*llhttp.c.llhttp_t, state));
+    const http_request : *HttpRequestCtx = @fieldParentPtr("state", @as(*llhttp.c.llhttp_t, state));
 
-    const allocator = parser.arena.allocator();
+    const allocator = http_request.arena.allocator();
 
-    const key = std.ascii.allocLowerString(allocator, parser.headers_state.acc_field.items) catch return 0;
-    const value = allocator.dupe(u8, parser.headers_state.acc_value.items) catch return 0;
+    const key = std.ascii.allocLowerString(allocator, http_request.headers_state.acc_field.items) catch return 0;
+    const value = allocator.dupe(u8, http_request.headers_state.acc_value.items) catch return 0;
 
-    parser.headers.put(key, value) catch return 0;
+    http_request.headers.put(key, value) catch return 0;
 
-    parser.headers_state.acc_field.resize(allocator, 0) catch return 0;
-    parser.headers_state.acc_value.resize(allocator, 0) catch return 0;
+    http_request.headers_state.acc_field.resize(allocator, 0) catch return 0;
+    http_request.headers_state.acc_value.resize(allocator, 0) catch return 0;
 
     return 0;
 }
@@ -90,9 +90,9 @@ fn http_on_headers_complete(_: [*c]llhttp.c.llhttp_t) callconv(.C) c_int {
 }
 
 fn http_on_message_complete(state: [*c]llhttp.c.llhttp_t) callconv(.C) c_int {
-    const parser : *HttpRequestCtx = @fieldParentPtr("state", @as(*llhttp.c.llhttp_t, state));
+    const http_request : *HttpRequestCtx = @fieldParentPtr("state", @as(*llhttp.c.llhttp_t, state));
 
-    parser.done = true;
+    http_request.done = true;
 
     return 0;
 }
@@ -100,12 +100,12 @@ fn http_on_message_complete(state: [*c]llhttp.c.llhttp_t) callconv(.C) c_int {
 fn client_connected(_: *apenetwork.Server, _: apenetwork.Client) void {}
 
 fn client_onhttpdata(_: *apenetwork.Server, client: apenetwork.Client, data: []const u8) ParseReturnState {
-    const parser : *HttpRequestCtx = @ptrCast(@alignCast(client.socket.*.ctx orelse return .cont));
+    const http_request : *HttpRequestCtx = @ptrCast(@alignCast(client.socket.*.ctx orelse return .cont));
 
-    const llhttp_errno = llhttp.c.llhttp_execute(&parser.state, data.ptr, data.len);
+    const llhttp_errno = llhttp.c.llhttp_execute(&http_request.state, data.ptr, data.len);
 
     return switch (llhttp_errno) {
-        llhttp.c.HPE_OK => return if (parser.done) .done else .cont,
+        llhttp.c.HPE_OK => return if (http_request.done) .done else .cont,
         llhttp.c.HPE_PAUSED_UPGRADE => {
             // TODO: Check that upgrade is actually websocket
             return .websocket_upgrade;
@@ -246,10 +246,10 @@ pub fn HttpServer(T: type) type {
                         const httpserver : *Self = @fieldParentPtr("server", server);
 
                         client.socket.*.ctx = parser: {
-                            const parser = httpserver.allocator.create(HttpRequestCtx) catch break :parser null;
-                            parser.* = HttpRequestCtx.init(httpserver.allocator);
+                            const http_request = httpserver.allocator.create(HttpRequestCtx) catch break :parser null;
+                            http_request.* = HttpRequestCtx.init(httpserver.allocator);
 
-                            break :parser parser;
+                            break :parser http_request;
                         };
 
                         // TODO: callback?
@@ -259,9 +259,9 @@ pub fn HttpServer(T: type) type {
                 .onDisconnect = struct {
                     fn disconnect(server: *apenetwork.Server, client: apenetwork.Client) void {
                         const httpserver : *Self = @fieldParentPtr("server", server);
-                        var parser : *HttpRequestCtx = @ptrCast(@alignCast(client.socket.*.ctx orelse return));
+                        var http_request : *HttpRequestCtx = @ptrCast(@alignCast(client.socket.*.ctx orelse return));
 
-                        if (parser.user_ctx) |ctx| {
+                        if (http_request.user_ctx) |ctx| {
 
                             const handler : *T = @ptrCast(@alignCast(ctx));
 
@@ -272,8 +272,8 @@ pub fn HttpServer(T: type) type {
                             handler.deinit();
                         }
 
-                        parser.deinit();
-                        httpserver.allocator.destroy(parser);
+                        http_request.deinit();
+                        httpserver.allocator.destroy(http_request);
                     }
                 }.disconnect,
 
@@ -286,12 +286,12 @@ pub fn HttpServer(T: type) type {
                         }
 
                         const httpserver : *Self = @fieldParentPtr("server", server);
-                        const parser : *HttpRequestCtx = @ptrCast(@alignCast(client.socket.*.ctx));
+                        const http_request : *HttpRequestCtx = @ptrCast(@alignCast(client.socket.*.ctx));
                         // const httpserver : *Self = @fieldParentPtr("server", server);
 
                         // We've switch to a websocket context
                         // Hand the data off directly to the websocket parser
-                        if (parser.websocket_state) |wsnew| {
+                        if (http_request.websocket_state) |wsnew| {
                             try wsnew.process_data(data);
 
                             return;
@@ -311,38 +311,38 @@ pub fn HttpServer(T: type) type {
                                 }
 
                                 const userctx : *T = blk: {
-                                    const ctx = try parser.arena.allocator().create(T);
-                                    ctx.* = T.init(parser, httpserver);
+                                    const ctx = try http_request.arena.allocator().create(T);
+                                    ctx.* = T.init(http_request, httpserver);
                                     break :blk ctx;
                                 };
 
-                                parser.user_ctx = userctx;
+                                http_request.user_ctx = userctx;
 
-                                if (!userctx.onUpradeToWebSocket(parser, client)) {
+                                if (!userctx.onUpradeToWebSocket(http_request, client)) {
                                     return error.HttpUnsupportedWebSocket;
                                 }
 
-                                if (!parser.acceptWebSocket(client, T.onWebSocketMessage)) {
+                                if (!http_request.acceptWebSocket(client, T.onWebSocketMessage)) {
                                     return error.HttpUnsupportedWebSocket;
                                 }
 
                                 if (std.meta.hasFn(T, "onUpgradedToWebSocket")) {
-                                    userctx.onUpgradedToWebSocket(&parser.websocket_state.?.client);
+                                    userctx.onUpgradedToWebSocket(&http_request.websocket_state.?.client);
                                 }
                             },
 
                             .done => {
 
                                 const userctx : *T = blk: {
-                                    const ctx = try parser.arena.allocator().create(T);
-                                    ctx.* = T.init(parser, httpserver);
+                                    const ctx = try http_request.arena.allocator().create(T);
+                                    ctx.* = T.init(http_request, httpserver);
                                     break :blk ctx;
                                 };
 
-                                parser.user_ctx = userctx;
+                                http_request.user_ctx = userctx;
 
                                 if (std.meta.hasFn(T, "onRequest")) {
-                                    userctx.onRequest(parser, client);
+                                    userctx.onRequest(http_request, client);
                                 }
 
                                 client.write("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n", .static);
