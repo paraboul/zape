@@ -243,11 +243,11 @@ pub fn HttpServer(T: type) type {
             try self.server.start(.{
                 .onConnect = struct {
                     fn connect(server: *apenetwork.Server, client: apenetwork.Client) void {
-                        const httpserver : *Self = @fieldParentPtr("server", server);
+                        const http_server : *Self = @fieldParentPtr("server", server);
 
                         client.socket.*.ctx = parser: {
-                            const http_request = httpserver.allocator.create(HttpRequestCtx) catch break :parser null;
-                            http_request.* = HttpRequestCtx.init(httpserver.allocator);
+                            const http_request = http_server.allocator.create(HttpRequestCtx) catch break :parser null;
+                            http_request.* = HttpRequestCtx.init(http_server.allocator);
 
                             break :parser http_request;
                         };
@@ -258,7 +258,7 @@ pub fn HttpServer(T: type) type {
 
                 .onDisconnect = struct {
                     fn disconnect(server: *apenetwork.Server, client: apenetwork.Client) void {
-                        const httpserver : *Self = @fieldParentPtr("server", server);
+                        const http_server : *Self = @fieldParentPtr("server", server);
                         var http_request : *HttpRequestCtx = @ptrCast(@alignCast(client.socket.*.ctx orelse return));
 
                         if (http_request.user_ctx) |ctx| {
@@ -273,7 +273,7 @@ pub fn HttpServer(T: type) type {
                         }
 
                         http_request.deinit();
-                        httpserver.allocator.destroy(http_request);
+                        http_server.allocator.destroy(http_request);
                     }
                 }.disconnect,
 
@@ -285,9 +285,9 @@ pub fn HttpServer(T: type) type {
                             client.close(.queue);
                         }
 
-                        const httpserver : *Self = @fieldParentPtr("server", server);
+                        const http_server : *Self = @fieldParentPtr("server", server);
                         const http_request : *HttpRequestCtx = @ptrCast(@alignCast(client.socket.*.ctx));
-                        // const httpserver : *Self = @fieldParentPtr("server", server);
+                        // const http_server : *Self = @fieldParentPtr("server", server);
 
                         // We've switch to a websocket context
                         // Hand the data off directly to the websocket parser
@@ -312,7 +312,7 @@ pub fn HttpServer(T: type) type {
 
                                 const userctx : *T = blk: {
                                     const ctx = try http_request.arena.allocator().create(T);
-                                    ctx.* = T.init(http_request, httpserver);
+                                    ctx.* = T.init(http_request, http_server);
                                     break :blk ctx;
                                 };
 
@@ -335,7 +335,7 @@ pub fn HttpServer(T: type) type {
 
                                 const userctx : *T = blk: {
                                     const ctx = try http_request.arena.allocator().create(T);
-                                    ctx.* = T.init(http_request, httpserver);
+                                    ctx.* = T.init(http_request, http_server);
                                     break :blk ctx;
                                 };
 
