@@ -97,10 +97,10 @@ fn http_on_message_complete(state: [*c]llhttp.c.llhttp_t) callconv(.C) c_int {
     return 0;
 }
 
-fn client_connected(_: *apenetwork.Server, _: apenetwork.Client) void {}
+fn client_connected(_: *apenetwork.Server, _: *apenetwork.Client) void {}
 
-fn client_onhttpdata(_: *apenetwork.Server, client: apenetwork.Client, data: []const u8) ParseReturnState {
-    const http_request : *HttpRequestCtx = @ptrCast(@alignCast(client.socket.*.ctx orelse return .cont));
+fn client_onhttpdata(_: *apenetwork.Server, client: *apenetwork.Client, data: []const u8) ParseReturnState {
+    const http_request : *HttpRequestCtx = @ptrCast(@alignCast(client.ctx() orelse return .cont));
 
     const llhttp_errno = llhttp.c.llhttp_execute(&http_request.state, data.ptr, data.len);
 
@@ -160,7 +160,7 @@ pub const HttpRequestCtx = struct {
         self.arena.deinit();
     }
 
-    pub fn acceptWebSocket(self: *HttpRequestCtx, client: apenetwork.Client, on_frame: anytype) bool {
+    pub fn acceptWebSocket(self: *HttpRequestCtx, client: *apenetwork.Client, on_frame: anytype) bool {
         if (self.headers.get("sec-websocket-key")) |wskey| {
 
             var b64key : [30]u8 = undefined;
@@ -242,24 +242,27 @@ pub fn HttpServer(T: type) type {
 
             try self.server.start(.{
                 .onConnect = struct {
-                    fn connect(server: *apenetwork.Server, client: apenetwork.Client) void {
+                    fn connect(server: *apenetwork.Server, client: *apenetwork.Client) void {
                         const http_server : *Self = @fieldParentPtr("server", server);
 
-                        client.socket.*.ctx = parser: {
+
+                        const ctx = parser: {
                             const http_request = http_server.allocator.create(HttpRequestCtx) catch break :parser null;
                             http_request.* = HttpRequestCtx.init(http_server.allocator);
 
                             break :parser http_request;
                         };
 
+                        client.setCtx(ctx);
+
                         // TODO: callback?
                     }
                 }.connect,
 
                 .onDisconnect = struct {
-                    fn disconnect(server: *apenetwork.Server, client: apenetwork.Client) void {
+                    fn disconnect(server: *apenetwork.Server, client: *apenetwork.Client) void {
                         const http_server : *Self = @fieldParentPtr("server", server);
-                        var http_request : *HttpRequestCtx = @ptrCast(@alignCast(client.socket.*.ctx orelse return));
+                        var http_request : *HttpRequestCtx = @ptrCast(@alignCast(client.ctx() orelse return));
 
                         if (http_request.user_ctx) |ctx| {
 
@@ -278,7 +281,7 @@ pub fn HttpServer(T: type) type {
                 }.disconnect,
 
                 .onData = struct {
-                    fn ondata(server: *apenetwork.Server, client: apenetwork.Client, data: []const u8) !void {
+                    fn ondata(server: *apenetwork.Server, client: *apenetwork.Client, data: []const u8) !void {
 
                         errdefer {
                             client.write("HTTP/1.1 400 Bad Request\r\n\r\n", .static);
@@ -286,7 +289,7 @@ pub fn HttpServer(T: type) type {
                         }
 
                         const http_server : *Self = @fieldParentPtr("server", server);
-                        const http_request : *HttpRequestCtx = @ptrCast(@alignCast(client.socket.*.ctx));
+                        const http_request : *HttpRequestCtx = @ptrCast(@alignCast(client.ctx() orelse return error.HttpStateError));
                         // const http_server : *Self = @fieldParentPtr("server", server);
 
                         // We've switch to a websocket context

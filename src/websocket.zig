@@ -91,7 +91,7 @@ pub fn WebSocketClient(comptime contype: WebSocketConnectionType) type {
     return struct {
 
         const Self = @This();
-        client: apenetwork.Client,
+        client: *apenetwork.Client,
         closed: bool = false,
         comptime connection_type: WebSocketConnectionType = contype,
 
@@ -223,7 +223,7 @@ pub fn WebSocketState(T: type, comptime contype: WebSocketConnectionType) type {
 
         callbacks: WebSocketCallbacks(T, contype),
 
-        pub fn init(allocator: std.mem.Allocator, context: *T, client: apenetwork.Client, callbacks: WebSocketCallbacks(T, contype)) Self {
+        pub fn init(allocator: std.mem.Allocator, context: *T, client: *apenetwork.Client, callbacks: WebSocketCallbacks(T, contype)) Self {
             return Self {
                 .buffer = .init(allocator),
                 .callbacks = callbacks,

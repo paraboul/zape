@@ -34,10 +34,10 @@ pub fn deleteAsync(ref: ?*anyopaque) void {
 
 pub const Client = struct {
     const Self = @This();
-    socket : [*c]c.ape_socket,
+    // socket : [*c]c.ape_socket,
 
-    pub fn write(self: *const Self, data: []const u8, lifetime: DataLifetime) void {
-        _ = c.APE_socket_write(self.socket, @constCast(data.ptr), data.len, switch (lifetime) {
+    pub fn write(self: *Self, data: []const u8, lifetime: DataLifetime) void {
+        _ = c.APE_socket_write(@ptrCast(@alignCast(self)), @constCast(data.ptr), data.len, switch (lifetime) {
            .static => c.APE_DATA_STATIC,
            .own => c.APE_DATA_OWN,
            .copy => c.APE_DATA_COPY
@@ -45,44 +45,56 @@ pub const Client = struct {
 
     }
 
-    pub fn tcpBufferStart(self: *const Self) void {
+    pub fn tcpBufferStart(self: *Self) void {
         switch (builtin.os.tag) {
             .linux => {
                 const state : u8 = 1;
-                std.posix.setsockopt(self.socket.*.s.fd, std.posix.IPPROTO.TCP, std.posix.TCP.CORK, &std.mem.toBytes(@as(c_int, state))) catch return;
+                const socket : [*c]c.ape_socket = @ptrCast(@alignCast(self));
+                std.posix.setsockopt(socket.*.s.fd, std.posix.IPPROTO.TCP, std.posix.TCP.CORK, &std.mem.toBytes(@as(c_int, state))) catch return;
             },
             else => {}
         }
     }
 
-    pub fn tcpBufferEnd(self: *const Self) void {
+    pub fn tcpBufferEnd(self: *Self) void {
         switch (builtin.os.tag) {
             .linux => {
                 const state : u8 = 0;
-                std.posix.setsockopt(self.socket.*.s.fd, std.posix.IPPROTO.TCP, std.posix.TCP.CORK, &std.mem.toBytes(@as(c_int, state))) catch return;
+                const socket : [*c]c.ape_socket = @ptrCast(@alignCast(self));
+                std.posix.setsockopt(socket.*.s.fd, std.posix.IPPROTO.TCP, std.posix.TCP.CORK, &std.mem.toBytes(@as(c_int, state))) catch return;
             },
             else => {}
         }
     }
 
-    pub fn close(self: *const Self, action: ShutdownAction) void {
+    pub fn close(self: *Self, action: ShutdownAction) void {
         switch (action) {
-            .now => c.APE_socket_shutdown_now(self.socket),
-            .queue => c.APE_socket_shutdown(self.socket)
+            .now => c.APE_socket_shutdown_now(@ptrCast(@alignCast(self))),
+            .queue => c.APE_socket_shutdown(@ptrCast(@alignCast(self)))
         }
     }
 
-    pub fn getAddr(self: *const Self) [*:0]u8 {
+    pub fn getAddr(self: *Self) [*:0]u8 {
         // XXX This is using inet_ntoa and so not thread safe
         // as it's using a globally shared buffer to store that string
-        return c.APE_socket_ipv4(self.socket);
+        return c.APE_socket_ipv4(@ptrCast(@alignCast(self)));
+    }
+
+    pub fn ctx(self: *Self) ?*anyopaque {
+        const socket : [*c]c.ape_socket = @ptrCast(@alignCast(self));
+        return socket.*.ctx;
+    }
+
+    pub fn setCtx(self: *Self, ptr: ?*anyopaque) void {
+        const socket : [*c]c.ape_socket = @ptrCast(@alignCast(self));
+        socket.*.ctx = ptr;
     }
 };
 
 const ServerCallbacks = struct {
-    onConnect: ?fn (*Server, Client) void = null,
-    onDisconnect: ?fn (*Server, Client) void = null,
-    onData: ?fn (*Server, Client, []const u8) anyerror!void = null
+    onConnect: ?fn (*Server, *Client) void = null,
+    onDisconnect: ?fn (*Server, *Client) void = null,
+    onData: ?fn (*Server, *Client, []const u8) anyerror!void = null
 };
 
 const ServerConfig = struct {
@@ -120,7 +132,7 @@ pub const Server = struct {
             fn callback(_: [*c]c.ape_socket, _client: [*c]c.ape_socket, _: [*c]c.ape_global, srv: ?*anyopaque) callconv(.C) void {
 
                 const ctx : *Self = @ptrCast(@alignCast(srv));
-                const client = Client{.socket = _client};
+                const client : *Client = @ptrCast(_client);
 
                 if (callbacks.onConnect) |onconnect| {
                     @call(.always_inline, onconnect, .{ ctx, client });
@@ -132,7 +144,7 @@ pub const Server = struct {
             fn callback(_client: [*c]c.ape_socket, _: [*c]c.ape_global, srv: ?*anyopaque) callconv(.C) void {
 
                 const ctx : *Self = @ptrCast(@alignCast(srv));
-                const client = Client{.socket = _client};
+                const client : *Client = @ptrCast(_client);
 
                 if (callbacks.onDisconnect) |ondisconnect| {
                     @call(.always_inline, ondisconnect, .{ ctx, client });
@@ -144,7 +156,7 @@ pub const Server = struct {
             fn callback(_client: [*c]c.ape_socket, data: [*c]const u8, len: usize, _: [*c]c.ape_global, srv: ?*anyopaque) callconv(.C) void {
 
                 const ctx : *Self = @ptrCast(@alignCast(srv));
-                const client = Client{.socket = _client};
+                const client : *Client = @ptrCast(_client);
 
                 if (callbacks.onData) |ondata| {
                     @call(.always_inline, ondata, .{ ctx, client, data[0..len] }) catch return;
