@@ -331,13 +331,16 @@ pub fn HttpServer(T: type) type {
                 .onData = struct {
                     fn ondata(server: *apenetwork.Server, client: *apenetwork.Client, data: []const u8) !void {
 
+                        const http_server : *Self = @fieldParentPtr("server", server);
+                        const http_request : *HttpRequestCtx = @ptrCast(@alignCast(client.ctx() orelse {
+                            client.close(.now);
+                            return error.HttpContextError;
+                        }));
+
                         errdefer {
-                            client.write("HTTP/1.1 400 Bad Request\r\n\r\n", .static);
-                            client.close(.queue);
+                            http_request.response(400, "", true);
                         }
 
-                        const http_server : *Self = @fieldParentPtr("server", server);
-                        const http_request : *HttpRequestCtx = @ptrCast(@alignCast(client.ctx() orelse return error.HttpStateError));
                         // const http_server : *Self = @fieldParentPtr("server", server);
 
                         // We've switch to a websocket context
@@ -392,7 +395,7 @@ pub fn HttpServer(T: type) type {
                                 http_request.user_ctx = userctx;
 
                                 if (std.meta.hasFn(T, "onRequest")) {
-                                    userctx.onRequest(http_request, client);
+                                    try userctx.onRequest(http_request, client);
                                 }
                             },
 

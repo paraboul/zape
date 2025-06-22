@@ -18,7 +18,7 @@ const HttpRequestHandler = struct {
 
     }
 
-    pub fn onRequest(_: * const HttpRequestHandler, _: * const http.HttpRequestCtx, _: *apenetwork.Client) void {
+    pub fn onRequest(_: * const HttpRequestHandler, _: * const http.HttpRequestCtx, _: *apenetwork.Client) !void {
 
     }
 
