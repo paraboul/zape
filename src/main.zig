@@ -43,8 +43,6 @@ pub fn main() !void {
     // Init the event loop for the current thread
     apenetwork.init();
 
-
-
     var gpa = std.heap.GeneralPurposeAllocator(.{
         .verbose_log = false
     }){};

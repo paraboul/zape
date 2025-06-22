@@ -118,6 +118,7 @@ pub const HttpRequestCtx = struct {
     state: llhttp.c.llhttp_t,
     headers: std.StringHashMap([]const u8),
     done: bool = false,
+    client: *apenetwork.Client,
 
     allocator: std.mem.Allocator,
     arena: std.heap.ArenaAllocator,
@@ -133,7 +134,7 @@ pub const HttpRequestCtx = struct {
 
     user_ctx: ?*anyopaque = null,
 
-    pub fn init(allocator: std.mem.Allocator) HttpRequestCtx {
+    pub fn init(allocator: std.mem.Allocator, client: *apenetwork.Client) HttpRequestCtx {
 
         return .{
             .allocator = allocator,
@@ -148,6 +149,7 @@ pub const HttpRequestCtx = struct {
                 break :state parser;
             },
             .headers = .init(allocator),
+            .client = client
         };
     }
 
@@ -209,6 +211,52 @@ pub const HttpRequestCtx = struct {
     pub fn getBody(self: *const HttpRequestCtx) [] const u8 {
         return self.headers_state.acc_body.items;
     }
+
+    pub fn response(self: *HttpRequestCtx, code: u16, data: [] const u8, close: bool) void {
+
+        var buffer: [256]u8 = undefined;
+
+        self.client.tcpBufferStart();
+        defer {
+            self.client.tcpBufferEnd();
+        }
+
+        const http_response = switch(code) {
+            100 => "Continue",
+            101 => "Switching Protocols",
+            200 => "OK",
+            201 => "Created",
+            202 => "Accepted",
+            204 => "No Content",
+            301 => "Moved Permanently",
+            302 => "Found",
+            304 => "Not Modified",
+            400 => "Bad Request",
+            401 => "Unauthorized",
+            403 => "Forbidden",
+            404 => "Not Found",
+            405 => "Method Not Allowed",
+            409 => "Conflict",
+            418 => "I'm a teapot",
+            429 => "Too Many Requests",
+            500 => "Internal Server Error",
+            501 => "Not Implemented",
+            502 => "Bad Gateway",
+            503 => "Service Unavailable",
+            else => "Unknown Status",
+        };
+
+        const ret = std.fmt.bufPrint(&buffer, "HTTP/1.1 {d} {s}\r\nContent-Length: {d}\r\n\r\n", .{code, http_response, data.len}) catch return;
+
+        self.client.write(ret, .copy);
+        if (data.len > 0) {
+            self.client.write(data, .copy);
+        }
+
+        if (close) {
+            self.client.close(.queue);
+        }
+    }
 };
 
 
@@ -248,7 +296,7 @@ pub fn HttpServer(T: type) type {
 
                         const ctx = parser: {
                             const http_request = http_server.allocator.create(HttpRequestCtx) catch break :parser null;
-                            http_request.* = HttpRequestCtx.init(http_server.allocator);
+                            http_request.* = HttpRequestCtx.init(http_server.allocator, client);
 
                             break :parser http_request;
                         };
@@ -335,7 +383,6 @@ pub fn HttpServer(T: type) type {
                             },
 
                             .done => {
-
                                 const userctx : *T = blk: {
                                     const ctx = try http_request.arena.allocator().create(T);
                                     ctx.* = T.init(http_request, http_server);
@@ -347,9 +394,6 @@ pub fn HttpServer(T: type) type {
                                 if (std.meta.hasFn(T, "onRequest")) {
                                     userctx.onRequest(http_request, client);
                                 }
-
-                                client.write("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n", .static);
-                                client.close(.queue);
                             },
 
                             else => {}

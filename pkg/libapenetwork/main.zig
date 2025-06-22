@@ -32,9 +32,10 @@ pub fn deleteAsync(ref: ?*anyopaque) void {
 }
 
 
+// This is just an empty wrapper around c.ape_socket
+// It's meant to be casted from a c.ape_socket pointer and never be allocated itself
 pub const Client = struct {
     const Self = @This();
-    // socket : [*c]c.ape_socket,
 
     pub fn write(self: *Self, data: []const u8, lifetime: DataLifetime) void {
         _ = c.APE_socket_write(@ptrCast(@alignCast(self)), @constCast(data.ptr), data.len, switch (lifetime) {
