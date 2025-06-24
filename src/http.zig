@@ -262,7 +262,8 @@ pub const HttpRequestCtx = struct {
 
 pub const HttpServerConfig = struct {
     port: u16,
-    address: [] const u8 = "0.0.0.0"
+    address: [] const u8 = "0.0.0.0",
+    preAllocatedRequest: usize = 64
 };
 
 
@@ -272,18 +273,25 @@ pub fn HttpServer(T: type) type {
         const Self = @This();
 
         allocator: std.mem.Allocator,
+        requests_pool: std.heap.MemoryPool(HttpRequestCtx),
         config: HttpServerConfig,
         server: apenetwork.Server,
+
 
         pub fn init(allocator: std.mem.Allocator, config: HttpServerConfig) !Self {
             return .{
                 .allocator = allocator,
+                .requests_pool = try .initPreheated(allocator, config.preAllocatedRequest),
                 .config = config,
                 .server = try .init(.{
                     .port = config.port,
                     .address = config.address
                 }),
             };
+        }
+
+        pub fn deinit(self: *Self) void {
+            self.requests_pool.deinit();
         }
 
         pub fn start(self: *Self) !void {
@@ -293,9 +301,8 @@ pub fn HttpServer(T: type) type {
                     fn connect(server: *apenetwork.Server, client: *apenetwork.Client) void {
                         const http_server : *Self = @fieldParentPtr("server", server);
 
-
                         const ctx = parser: {
-                            const http_request = http_server.allocator.create(HttpRequestCtx) catch break :parser null;
+                            const http_request = http_server.requests_pool.create() catch break :parser null;
                             http_request.* = HttpRequestCtx.init(http_server.allocator, client);
 
                             break :parser http_request;
@@ -324,7 +331,7 @@ pub fn HttpServer(T: type) type {
                         }
 
                         http_request.deinit();
-                        http_server.allocator.destroy(http_request);
+                        http_server.requests_pool.destroy(http_request);
                     }
                 }.disconnect,
 
