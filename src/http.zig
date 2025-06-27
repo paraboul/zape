@@ -170,7 +170,7 @@ pub const HttpRequestCtx = struct {
             const b64key_slice = websocket.get_b64_accept_key(wskey, &b64key) catch @panic("OOM");
 
             client.tcpBufferStart();
-            client.write(apenetwork.c.WEBSOCKET_HARDCODED_HEADERS, .static);
+            client.write(websocket.ws_hardcoded_header, .static);
             client.write("Sec-WebSocket-Accept: ", .static);
             client.write(b64key_slice, .copy);
             client.write("\r\nSec-WebSocket-Origin: 127.0.0.1\r\n\r\n", .static);
@@ -276,7 +276,6 @@ pub fn HttpServer(T: type) type {
         requests_pool: std.heap.MemoryPool(HttpRequestCtx),
         config: HttpServerConfig,
         server: apenetwork.Server,
-
 
         pub fn init(allocator: std.mem.Allocator, config: HttpServerConfig) !Self {
             return .{

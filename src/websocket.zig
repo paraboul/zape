@@ -4,6 +4,8 @@ const apenetwork = @import("libapenetwork");
 const maximum_preallocated_bytes_per_frame = 1024*1024;
 const ws_guid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
+pub const ws_hardcoded_header =  "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n";
+
 pub const WebSocketConnectionType = enum {
     client,
     server
