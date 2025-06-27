@@ -119,9 +119,9 @@ pub fn WebSocketClient(comptime contype: WebSocketConnectionType) type {
                 payload_head[1] = 0x80;
             }
 
-            // Turn on TCP CORK if we have multiple buffer to write
-            if (datav.len) self.client.tcpBufferStart();
-            defer if (datav.len) self.client.tcpBufferEnd();
+            // Turn on TCP CORK so we can optimize multiple write() calls
+            self.client.tcpBufferStart();
+            defer self.client.tcpBufferEnd();
 
             const data_len = blk: {
                 var t : u64 = 0;
