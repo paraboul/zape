@@ -45,8 +45,6 @@ pub fn build(b: *std.Build) void {
 }
 
 const base_sources = [_][]const u8{
-    "ape_array.c",
-    "ape_base64.c",
     "ape_buffer.c",
     "ape_dns.c",
     "ape_event_epoll.c",
@@ -56,12 +54,9 @@ const base_sources = [_][]const u8{
     "ape_events_loop.c",
     "ape_hash.c",
     "ape_log.c",
-    "ape_lz4.c",
     "ape_netlib.c",
     "ape_pool.c",
-    "ape_sha1.c",
     "ape_socket.c",
     "ape_ssl.c",
     "ape_timers_next.c",
-    "ape_websocket.c",
 };
