@@ -43,7 +43,6 @@ pub const Client = struct {
            .own => c.APE_DATA_OWN,
            .copy => c.APE_DATA_COPY
         });
-
     }
 
     pub fn tcpBufferStart(self: *Self) void {

@@ -38,7 +38,6 @@ pub const OpCode = enum(u4) {
 };
 
 fn get_masking_key() u32 {
-
     // This is how you define static in zig
     // Make prng static so it's only initialized the first time it's called
     const S = struct {
@@ -57,7 +56,6 @@ fn get_masking_key() u32 {
 }
 
 fn get_sha1_accept_key(key: [] const u8, out: *[20]u8) !void {
-
     if (key.len > 32) {
         return error.KeyTooLong;
     }
@@ -89,10 +87,9 @@ pub const WebSocketData = struct {
 };
 
 pub fn WebSocketClient(comptime contype: WebSocketConnectionType) type {
-
     return struct {
-
         const Self = @This();
+
         client: *apenetwork.Client,
         closed: bool = false,
         comptime connection_type: WebSocketConnectionType = contype,

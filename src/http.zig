@@ -70,14 +70,11 @@ fn http_on_header_field_complete(_: [*c]llhttp.c.llhttp_t) callconv(.C) c_int {
 
 fn http_on_header_value_complete(state: [*c]llhttp.c.llhttp_t) callconv(.C) c_int {
     const http_request : *HttpRequestCtx = @fieldParentPtr("state", @as(*llhttp.c.llhttp_t, state));
-
     const allocator = http_request.arena.allocator();
-
     const key = std.ascii.allocLowerString(allocator, http_request.headers_state.acc_field.items) catch return 0;
     const value = allocator.dupe(u8, http_request.headers_state.acc_value.items) catch return 0;
 
     http_request.headers.put(key, value) catch return 0;
-
     http_request.headers_state.acc_field.resize(allocator, 0) catch return 0;
     http_request.headers_state.acc_value.resize(allocator, 0) catch return 0;
 
@@ -101,7 +98,6 @@ fn client_connected(_: *apenetwork.Server, _: *apenetwork.Client) void {}
 
 fn client_onhttpdata(_: *apenetwork.Server, client: *apenetwork.Client, data: []const u8) ParseReturnState {
     const http_request : *HttpRequestCtx = @ptrCast(@alignCast(client.ctx() orelse return .cont));
-
     const llhttp_errno = llhttp.c.llhttp_execute(&http_request.state, data.ptr, data.len);
 
     return switch (llhttp_errno) {
@@ -135,7 +131,6 @@ pub const HttpRequestCtx = struct {
     user_ctx: ?*anyopaque = null,
 
     pub fn init(allocator: std.mem.Allocator, client: *apenetwork.Client) HttpRequestCtx {
-
         return .{
             .allocator = allocator,
             .arena = .init(allocator),
@@ -154,7 +149,6 @@ pub const HttpRequestCtx = struct {
     }
 
     pub fn deinit(self: *HttpRequestCtx) void {
-
         if (self.websocket_state) |wsstate| {
             wsstate.deinit();
         }
@@ -164,7 +158,6 @@ pub const HttpRequestCtx = struct {
 
     pub fn acceptWebSocket(self: *HttpRequestCtx, client: *apenetwork.Client, on_frame: anytype) bool {
         if (self.headers.get("sec-websocket-key")) |wskey| {
-
             var b64key : [30]u8 = undefined;
 
             const b64key_slice = websocket.get_b64_accept_key(wskey, &b64key) catch @panic("OOM");
@@ -213,13 +206,10 @@ pub const HttpRequestCtx = struct {
     }
 
     pub fn response(self: *HttpRequestCtx, code: u16, data: [] const u8, close: bool) void {
-
         var buffer: [256]u8 = undefined;
 
         self.client.tcpBufferStart();
-        defer {
-            self.client.tcpBufferEnd();
-        }
+        defer self.client.tcpBufferEnd();
 
         const http_response = switch(code) {
             100 => "Continue",
@@ -249,6 +239,7 @@ pub const HttpRequestCtx = struct {
         const ret = std.fmt.bufPrint(&buffer, "HTTP/1.1 {d} {s}\r\nContent-Length: {d}\r\n\r\n", .{code, http_response, data.len}) catch return;
 
         self.client.write(ret, .copy);
+
         if (data.len > 0) {
             self.client.write(data, .copy);
         }
@@ -268,7 +259,6 @@ pub const HttpServerConfig = struct {
 
 
 pub fn HttpServer(T: type) type {
-
     return struct {
         const Self = @This();
 
@@ -294,7 +284,6 @@ pub fn HttpServer(T: type) type {
         }
 
         pub fn start(self: *Self) !void {
-
             try self.server.start(.{
                 .onConnect = struct {
                     fn connect(server: *apenetwork.Server, client: *apenetwork.Client) void {
