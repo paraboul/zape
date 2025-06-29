@@ -353,7 +353,6 @@ pub fn HttpServer(T: type) type {
                             },
 
                             .websocket_upgrade => {
-
                                 // These two functions must be implemented in order to accept WS upgrade
                                 if (!std.meta.hasFn(T, "onUpradeToWebSocket") or !std.meta.hasFn(T, "onWebSocketMessage")) {
                                     return error.HttpUnsupportedWebSocket;

@@ -195,10 +195,7 @@ pub fn WebSocketState(T: type, comptime contype: WebSocketConnectionType) type {
         const Self = @This();
 
         buffer: std.ArrayList(u8),
-
         client: WebSocketClient(contype),
-
-        context: *T,
 
         frame: struct {
             length: u64 = 0,
@@ -211,6 +208,8 @@ pub fn WebSocketState(T: type, comptime contype: WebSocketConnectionType) type {
             key: [4]u8 = .{0, 0, 0, 0},
             pos: u2 = 0
         } = .{},
+
+        context: *T,
 
         data_inkey: u2 = 0,
         masking: bool = false,
