@@ -114,6 +114,7 @@ pub const HttpRequestCtx = struct {
     state: llhttp.c.llhttp_t,
     headers: std.StringHashMap([]const u8),
     done: bool = false,
+    responded: bool = false,
     client: *apenetwork.Client,
 
     allocator: std.mem.Allocator,
@@ -206,6 +207,12 @@ pub const HttpRequestCtx = struct {
     }
 
     pub fn response(self: *HttpRequestCtx, code: u16, data: [] const u8, close: bool) void {
+        if (self.responded) {
+            return;
+        }
+
+        self.responded = true;
+
         var buffer: [256]u8 = undefined;
 
         self.client.tcpBufferStart();
