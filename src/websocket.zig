@@ -60,12 +60,13 @@ fn get_sha1_accept_key(key: [] const u8, out: *[20]u8) !void {
         return error.KeyTooLong;
     }
 
-    var buffer = try std.BoundedArray(u8, 64).init(0);
+    var buf : [64]u8 = undefined;
+    var buffer = std.ArrayList(u8).initBuffer(&buf);
 
-    try buffer.appendSlice(key);
-    try buffer.appendSlice(ws_guid);
+    try buffer.appendSliceBounded(key);
+    try buffer.appendSliceBounded(ws_guid);
 
-    std.crypto.hash.Sha1.hash(buffer.constSlice(), out, .{});
+    std.crypto.hash.Sha1.hash(buffer.items, out, .{});
 }
 
 pub fn get_b64_accept_key(key: [] const u8, out: *[30] u8) ![] const u8 {
