@@ -24,7 +24,7 @@ const http_parser_settings : llhttp.c.llhttp_settings_t  = .{
 };
 
 
-fn http_on_body(state: [*c]llhttp.c.llhttp_t, data: [*c]const u8, len: usize) callconv(.C) c_int {
+fn http_on_body(state: [*c]llhttp.c.llhttp_t, data: [*c]const u8, len: usize) callconv(.c) c_int {
     const http_request : *HttpRequestCtx = @fieldParentPtr("state", @as(*llhttp.c.llhttp_t, state));
     const allocator = http_request.arena.allocator();
 
@@ -51,7 +51,7 @@ fn http_on_body(state: [*c]llhttp.c.llhttp_t, data: [*c]const u8, len: usize) ca
 
 fn http_on_parse_header_data(comptime field_name: []const u8) type {
     return struct {
-        fn func(state: [*c]llhttp.c.llhttp_t, data: [*c]const u8, size: usize) callconv(.C) c_int {
+        fn func(state: [*c]llhttp.c.llhttp_t, data: [*c]const u8, size: usize) callconv(.c) c_int {
             const http_request : *HttpRequestCtx = @fieldParentPtr("state", @as(*llhttp.c.llhttp_t, state));
             const allocator = http_request.arena.allocator();
 
@@ -64,11 +64,11 @@ fn http_on_parse_header_data(comptime field_name: []const u8) type {
     };
 }
 
-fn http_on_header_field_complete(_: [*c]llhttp.c.llhttp_t) callconv(.C) c_int {
+fn http_on_header_field_complete(_: [*c]llhttp.c.llhttp_t) callconv(.c) c_int {
     return 0;
 }
 
-fn http_on_header_value_complete(state: [*c]llhttp.c.llhttp_t) callconv(.C) c_int {
+fn http_on_header_value_complete(state: [*c]llhttp.c.llhttp_t) callconv(.c) c_int {
     const http_request : *HttpRequestCtx = @fieldParentPtr("state", @as(*llhttp.c.llhttp_t, state));
     const allocator = http_request.arena.allocator();
     const key = std.ascii.allocLowerString(allocator, http_request.headers_state.acc_field.items) catch return 0;
@@ -82,11 +82,11 @@ fn http_on_header_value_complete(state: [*c]llhttp.c.llhttp_t) callconv(.C) c_in
 }
 
 
-fn http_on_headers_complete(_: [*c]llhttp.c.llhttp_t) callconv(.C) c_int {
+fn http_on_headers_complete(_: [*c]llhttp.c.llhttp_t) callconv(.c) c_int {
     return 0;
 }
 
-fn http_on_message_complete(state: [*c]llhttp.c.llhttp_t) callconv(.C) c_int {
+fn http_on_message_complete(state: [*c]llhttp.c.llhttp_t) callconv(.c) c_int {
     const http_request : *HttpRequestCtx = @fieldParentPtr("state", @as(*llhttp.c.llhttp_t, state));
 
     http_request.done = true;

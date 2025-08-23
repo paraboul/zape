@@ -17,7 +17,7 @@ pub fn callAsync(comptime callback: anytype, args: anytype) ?*anyopaque {
     const gape = c.APE_get();
 
     const wrapper = struct {
-        fn wrappedCallback(arg: ?*anyopaque) callconv(.C) c_int {
+        fn wrappedCallback(arg: ?*anyopaque) callconv(.c) c_int {
             return @call(.always_inline, callback, .{@as(@TypeOf(args), @ptrCast(@alignCast(arg)))});
         }
     };
@@ -129,7 +129,7 @@ pub const Server = struct {
         self.socket.*.callbacks.arg = self;
 
         self.socket.*.callbacks.on_connect = struct {
-            fn callback(_: [*c]c.ape_socket, _client: [*c]c.ape_socket, _: [*c]c.ape_global, srv: ?*anyopaque) callconv(.C) void {
+            fn callback(_: [*c]c.ape_socket, _client: [*c]c.ape_socket, _: [*c]c.ape_global, srv: ?*anyopaque) callconv(.c) void {
 
                 const ctx : *Self = @ptrCast(@alignCast(srv));
                 const client : *Client = @ptrCast(_client);
@@ -141,7 +141,7 @@ pub const Server = struct {
         }.callback;
 
         self.socket.*.callbacks.on_disconnect = struct {
-            fn callback(_client: [*c]c.ape_socket, _: [*c]c.ape_global, srv: ?*anyopaque) callconv(.C) void {
+            fn callback(_client: [*c]c.ape_socket, _: [*c]c.ape_global, srv: ?*anyopaque) callconv(.c) void {
 
                 const ctx : *Self = @ptrCast(@alignCast(srv));
                 const client : *Client = @ptrCast(_client);
@@ -153,7 +153,7 @@ pub const Server = struct {
         }.callback;
 
         self.socket.*.callbacks.on_read = struct {
-            fn callback(_client: [*c]c.ape_socket, data: [*c]const u8, len: usize, _: [*c]c.ape_global, srv: ?*anyopaque) callconv(.C) void {
+            fn callback(_client: [*c]c.ape_socket, data: [*c]const u8, len: usize, _: [*c]c.ape_global, srv: ?*anyopaque) callconv(.c) void {
 
                 const ctx : *Self = @ptrCast(@alignCast(srv));
                 const client : *Client = @ptrCast(_client);
