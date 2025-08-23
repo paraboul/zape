@@ -194,7 +194,9 @@ pub fn WebSocketState(T: type, comptime contype: WebSocketConnectionType) type {
     return struct {
         const Self = @This();
 
-        buffer: std.ArrayList(u8),
+        allocator: std.mem.Allocator,
+
+        buffer: std.ArrayList(u8) = .empty,
         client: WebSocketClient(contype),
 
         frame: struct {
@@ -222,7 +224,7 @@ pub fn WebSocketState(T: type, comptime contype: WebSocketConnectionType) type {
 
         pub fn init(allocator: std.mem.Allocator, context: *T, client: *apenetwork.Client, callbacks: WebSocketCallbacks(T, contype)) Self {
             return Self {
-                .buffer = .init(allocator),
+                .allocator = allocator,
                 .callbacks = callbacks,
                 .context = context,
                 .client = .{ .client = client }
@@ -230,7 +232,7 @@ pub fn WebSocketState(T: type, comptime contype: WebSocketConnectionType) type {
         }
 
         pub fn deinit(self: *Self) void {
-            self.buffer.deinit();
+            self.buffer.deinit(self.allocator);
         }
 
         pub fn process_data(self: *Self, data: []const u8) !void {
@@ -244,7 +246,7 @@ pub fn WebSocketState(T: type, comptime contype: WebSocketConnectionType) type {
                         self.cipher.pos = 0;
                         self.frame.length_pos = 0;
                         self.frame.length = 0;
-                        try self.buffer.resize(0);
+                        try self.buffer.resize(self.allocator, 0);
                     },
 
                     .step_length => {
@@ -314,10 +316,10 @@ pub fn WebSocketState(T: type, comptime contype: WebSocketConnectionType) type {
                         const decoded_byte : u8 = byte ^ self.cipher.key[self.data_inkey];
 
                         if (self.buffer.capacity == 0) {
-                            self.buffer.ensureTotalCapacity(@min(self.frame.length, maximum_preallocated_bytes_per_frame)) catch @panic("OOM");
+                            self.buffer.ensureTotalCapacity(self.allocator, @min(self.frame.length, maximum_preallocated_bytes_per_frame)) catch @panic("OOM");
                         }
 
-                        self.buffer.append(decoded_byte) catch @panic("OOM");
+                        self.buffer.append(self.allocator, decoded_byte) catch @panic("OOM");
 
                         if (self.buffer.items.len == self.frame.length) {
                             try self.end_message();
