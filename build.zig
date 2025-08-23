@@ -13,9 +13,11 @@ pub fn build(b: *std.Build) void {
 
     const bin = b.addExecutable(.{
         .name = "netserver",
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
 
     const libapenetwork = b.dependency("libapenetwork", .{ .target = target, .optimize = optimize });

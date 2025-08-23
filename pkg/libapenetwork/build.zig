@@ -17,10 +17,13 @@ pub fn build(b: *std.Build) void {
     const upstream = b.dependency("libapenetwork", .{ .target = target, .optimize = optimize });
     const cares = b.dependency("c-ares", .{ .target = target, .optimize = optimize });
 
-    const lib = b.addStaticLibrary(.{
+    const lib = b.addLibrary(.{
         .name = "apenetwork",
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .target = target,
+            .optimize = optimize,
+        }),
+        .linkage = .static
     });
 
     // std.debug.print("Got {}", .{cares});
