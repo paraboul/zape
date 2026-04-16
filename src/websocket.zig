@@ -60,8 +60,8 @@ fn get_sha1_accept_key(key: [] const u8, out: *[20]u8) !void {
         return error.KeyTooLong;
     }
 
-    var buf : [64]u8 = undefined;
-    var buffer = std.ArrayList(u8).initBuffer(&buf);
+    var mem : [64]u8 = undefined;
+    var buffer = std.ArrayList(u8).initBuffer(&mem);
 
     try buffer.appendSliceBounded(key);
     try buffer.appendSliceBounded(ws_guid);
