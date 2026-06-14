@@ -277,7 +277,7 @@ pub fn HttpServer(T: type) type {
         pub fn init(allocator: std.mem.Allocator, config: HttpServerConfig) !Self {
             return .{
                 .allocator = allocator,
-                .requests_pool = try .initPreheated(allocator, config.preAllocatedRequest),
+                .requests_pool = try .initCapacity(allocator, config.preAllocatedRequest),
                 .config = config,
                 .server = try .init(.{
                     .port = config.port,
@@ -287,7 +287,7 @@ pub fn HttpServer(T: type) type {
         }
 
         pub fn deinit(self: *Self) void {
-            self.requests_pool.deinit();
+            self.requests_pool.deinit(self.allocator);
         }
 
         pub fn start(self: *Self) !void {
@@ -297,7 +297,7 @@ pub fn HttpServer(T: type) type {
                         const http_server : *Self = @fieldParentPtr("server", server);
 
                         const ctx = parser: {
-                            const http_request = http_server.requests_pool.create() catch break :parser null;
+                            const http_request = http_server.requests_pool.create(http_server.allocator) catch break :parser null;
                             http_request.* = HttpRequestCtx.init(http_server.allocator, client);
 
                             break :parser http_request;
