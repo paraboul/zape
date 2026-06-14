@@ -38,16 +38,13 @@ const HttpRequestHandler = struct {
     }
 };
 
-pub fn main() !void {
+pub fn main(init: std.process.Init) !void {
 
     // Init the event loop for the current thread
     apenetwork.init();
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{
-        .verbose_log = false
-    }){};
 
-    var server = try http.HttpServer(HttpRequestHandler).init(gpa.allocator(), .{
+    var server = try http.HttpServer(HttpRequestHandler).init(init.gpa, .{
         .port = 80,
     });
 
