@@ -19,12 +19,12 @@ pub fn build(b: *std.Build) void {
     lib.root_module.addCMacro("HAVE_CONFIG_H", "1");
 
     switch(target.result.os.tag) {
-        .linux => lib.addIncludePath(b.path("vendor/include/linux")),
-        .macos => lib.addIncludePath(b.path("vendor/include/macos")),
+        .linux => lib.root_module.addIncludePath(b.path("vendor/include/linux")),
+        .macos => lib.root_module.addIncludePath(b.path("vendor/include/macos")),
         else => {}
     }
 
-    lib.addIncludePath(upstream.path("include"));
+    lib.root_module.addIncludePath(upstream.path("include"));
 
     // lib.addConfigHeader(b.addConfigHeader(.{
     //     .style = .{
@@ -35,13 +35,13 @@ pub fn build(b: *std.Build) void {
     // }));
     //
 
-    lib.addCSourceFiles(.{
+    lib.root_module.addCSourceFiles(.{
         .root = upstream.path("src/lib"),
         .files = srcs,
         // .flags = &flags,
     });
 
-    lib.linkLibC();
+    lib.root_module.link_libc = true;
 
     lib.installHeadersDirectory(
         upstream.path("include"),

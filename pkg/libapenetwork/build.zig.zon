@@ -1,5 +1,6 @@
 .{
     .name = .libapenetwork,
+    .fingerprint = 0x8d1b06c165d72c76,
     .version = "0.1.0",
     .paths = .{""},
     .dependencies = .{

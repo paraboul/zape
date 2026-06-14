@@ -22,12 +22,12 @@ pub fn build(b: *std.Build) void {
 
     module.addIncludePath(b.path("vendor"));
 
-    lib.addCSourceFiles(.{
+    lib.root_module.addCSourceFiles(.{
         .root = b.path("vendor"),
         .files = &base_sources
     });
 
-    lib.linkLibC();
+    lib.root_module.link_libc = true;
 
     lib.installHeadersDirectory(b.path("vendor/"), "", .{ .include_extensions = &.{".h"} });
 

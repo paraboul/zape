@@ -26,11 +26,11 @@ pub fn build(b: *std.Build) void {
     const apenetwork = libapenetwork.artifact("apenetwork");
     const llhttp = libllhttp.artifact("llhttp");
 
-    bin.linkLibrary(apenetwork);
-    bin.linkLibrary(llhttp);
-    bin.linkSystemLibrary("z");
-    bin.linkSystemLibrary("resolv");
-    bin.linkLibC();
+    bin.root_module.linkLibrary(apenetwork);
+    bin.root_module.linkLibrary(llhttp);
+    bin.root_module.linkSystemLibrary("z", .{});
+    bin.root_module.linkSystemLibrary("resolv", .{});
+    bin.root_module.link_libc = true;
 
     zape_module.linkLibrary(apenetwork);
     zape_module.linkLibrary(llhttp);

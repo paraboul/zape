@@ -28,13 +28,13 @@ pub fn build(b: *std.Build) void {
 
     // std.debug.print("Got {}", .{cares});
 
-    lib.linkLibC();
-    lib.addIncludePath(upstream.path(""));
+    lib.root_module.link_libc = true;
+    lib.root_module.addIncludePath(upstream.path(""));
     module.addIncludePath(upstream.path(""));
 
-    lib.linkLibrary(cares.artifact("cares"));
+    lib.root_module.linkLibrary(cares.artifact("cares"));
 
-    lib.addCSourceFiles(.{
+    lib.root_module.addCSourceFiles(.{
         .root = upstream.path(""),
         .files = &base_sources,
         .flags = &flags,

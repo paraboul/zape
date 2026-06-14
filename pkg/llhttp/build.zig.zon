@@ -1,5 +1,6 @@
 .{
     .name = .llhttp,
+    .fingerprint = 0x240a2660d675e790,
     .version = "9.2.3",
     .paths = .{""},
 }
