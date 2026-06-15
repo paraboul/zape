@@ -268,15 +268,16 @@ pub const HttpServerConfig = struct {
 pub fn HttpServer(T: type) type {
     return struct {
         const Self = @This();
-
         allocator: std.mem.Allocator,
+        io: std.Io,
         requests_pool: std.heap.MemoryPool(HttpRequestCtx),
         config: HttpServerConfig,
         server: apenetwork.Server,
 
-        pub fn init(allocator: std.mem.Allocator, config: HttpServerConfig) !Self {
+        pub fn init(allocator: std.mem.Allocator, io: std.Io, config: HttpServerConfig) !Self {
             return .{
                 .allocator = allocator,
+                .io = io,
                 .requests_pool = try .initCapacity(allocator, config.preAllocatedRequest),
                 .config = config,
                 .server = try .init(.{
