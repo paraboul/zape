@@ -44,7 +44,7 @@ pub fn main(init: std.process.Init) !void {
     apenetwork.init();
 
 
-    var server = try http.HttpServer(HttpRequestHandler).init(init.gpa, .{
+    var server = try http.HttpServer(HttpRequestHandler).init(init.gpa, init.io, .{
         .port = 80,
     });
 
